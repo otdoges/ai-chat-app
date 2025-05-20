@@ -368,6 +368,12 @@ export default function ChatPage() {
                     >
                       <Trash2 className="h-4 w-4 mr-2" />Delete Chat
                     </button>
+                    <button
+                      className="flex items-center w-full px-3 py-2 text-sm hover:bg-muted text-red-500"
+                      onClick={() => clearChatHistory()}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />Clear Messages
+                    </button>
                   </div>
                 )}
               </div>
