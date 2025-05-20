@@ -3,11 +3,31 @@ import { AzureKeyCredential } from "@azure/core-auth";
 import env from "../env";
 import { getSystemPrompt } from "../systemPrompt";
 
+// Type definitions for streaming responses
+interface StreamingResponse {
+  choices: Array<{
+    delta: { content?: string };
+  }>;
+  usage?: {
+    completion_tokens: number;
+    prompt_tokens: number;
+    total_tokens: number;
+  };
+}
+
 // No need for isBrowser check here as we handle it differently
 
 export interface ChatMessage {
   role: "user" | "system" | "assistant" | "developer" | "agent";
   content: string;
+}
+
+// Interface for streaming response handlers
+export interface StreamCallbacks {
+  onStart?: () => void;
+  onToken?: (token: string) => void;
+  onComplete?: (fullText: string) => void;
+  onError?: (error: Error) => void;
 }
 
 // Models available from GitHub Marketplace: https://github.com/marketplace/models/
@@ -83,6 +103,7 @@ function getModelParams(modelId: string): ModelParams {
 const responseCache = new Map<string, {response: string, timestamp: number}>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 const CONNECTION_TIMEOUT = 15000; // 15 seconds timeout for connections
+const USE_STREAMING = true; // Flag to enable/disable streaming responses
 
 class AIService {
   private token: string;
@@ -208,7 +229,13 @@ class AIService {
     }
   }
 
-  async generateResponse(messages: ChatMessage[]): Promise<string> {
+  /**
+   * Generate a response using streaming API for faster responses
+   * @param messages The chat messages to generate a response for
+   * @param streamCallbacks Optional callbacks for streaming responses
+   * @returns Promise with the complete response text
+   */
+  async generateResponse(messages: ChatMessage[], streamCallbacks?: StreamCallbacks): Promise<string> {
     if (!this.token) {
       throw new Error('GitHub token is not configured. Please set the GITHUB_TOKEN environment variable.');
     }
@@ -216,11 +243,13 @@ class AIService {
     // Generate a cache key from the messages and model
     const cacheKey = this.generateCacheKey(messages, this.model);
     
-    // Check cache for existing response
-    const cachedData = responseCache.get(cacheKey);
-    if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL)) {
-      console.log('Using cached response for', this.model);
-      return cachedData.response;
+    // Check cache for existing response (skip if we're streaming)
+    if (!streamCallbacks) {
+      const cachedData = responseCache.get(cacheKey);
+      if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL)) {
+        console.log('Using cached response for', this.model);
+        return cachedData.response;
+      }
     }
     
     // Initialize client if it doesn't exist yet (server-side)
@@ -234,6 +263,11 @@ class AIService {
     
     // Get client from pool (either the current one or create a model-specific one)
     const client = this.clientPool.get(this.model) || this.getOrCreateClient(this.model);
+
+    // Signal start of streaming if callbacks provided
+    if (streamCallbacks?.onStart) {
+      streamCallbacks.onStart();
+    }
 
     try {
       // Use Gemini API if Gemini model is selected
@@ -273,32 +307,162 @@ class AIService {
         });
         if (!resp.ok) {
           const error = await resp.text();
-          throw new Error("Gemini API error: " + error);
+          const errorMsg = "Gemini API error: " + error;
+          if (streamCallbacks?.onError) {
+            streamCallbacks.onError(new Error(errorMsg));
+          }
+          throw new Error(errorMsg);
         }
-        const endpoint = 'https://models.github.ai/inference';
-        const model = 'openai/o4-mini';
-        const client = ModelClient(endpoint, new AzureKeyCredential(token), { apiVersion: '2024-12-01-preview' });
-        const systemPrompt = getSystemPrompt(this.model);
-        const formattedMessages = [
-          { role: 'developer', content: systemPrompt },
+        
+        const data = await resp.json();
+        if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
+          const errorMsg = "No response generated from Gemini.";
+          if (streamCallbacks?.onError) {
+            streamCallbacks.onError(new Error(errorMsg));
+          }
+          return errorMsg;
+        }
+        
+        const responseText = data.candidates[0].content.parts[0].text;
+        
+        // If streaming is enabled, send the complete response as one chunk
+        if (streamCallbacks?.onToken) {
+          streamCallbacks.onToken(responseText);
+        }
+        
+        if (streamCallbacks?.onComplete) {
+          streamCallbacks.onComplete(responseText);
+        }
+        
+        // Cache the response
+        responseCache.set(cacheKey, {
+          response: responseText,
+          timestamp: Date.now()
+        });
+        
+        return responseText;
+      }
+      // Use Phi-4 Mini model
+      else if (this.model === 'phi-4-mini') {
+        // Create Phi-4 Mini client
+        const phi4Client = ModelClient(
+          'https://models.github.ai/inference',
+          new AzureKeyCredential(this.token)
+        );
+        
+        const phi4Model = 'microsoft/Phi-4-mini-reasoning';
+        
+        // If streaming is enabled and callbacks provided
+        if (USE_STREAMING && streamCallbacks) {
+          try {
+            let fullText = '';
+            
+            // Use streaming endpoint
+            const streamingResponse = await phi4Client.path('/chat/completions').post({
+              body: {
+                messages: messages.map(m => ({ role: m.role, content: m.content })),
+                temperature: 1.0,
+                top_p: 1.0,
+                max_tokens: 600, // Reduced tokens for faster response
+                model: phi4Model,
+                stream: true // Enable streaming
+              },
+            });
+            
+            const reader = streamingResponse.body.getReader();
+            const decoder = new TextDecoder();
+            
+            // Process the stream
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n').filter(line => line.trim() !== '');
+              
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = line.substring(6);
+                  if (data === '[DONE]') break;
+                  
+                  try {
+                    const parsed = JSON.parse(data) as StreamingResponse;
+                    const content = parsed.choices[0]?.delta?.content || '';
+                    
+                    if (content) {
+                      fullText += content;
+                      streamCallbacks.onToken?.(content);
+                    }
+                  } catch (e) {
+                    console.error('Error parsing streaming response:', e);
+                  }
+                }
+              }
+            }
+            
+            // Signal completion
+            streamCallbacks.onComplete?.(fullText);
+            
+            // Cache the complete response
+            responseCache.set(cacheKey, {
+              response: fullText,
+              timestamp: Date.now()
+            });
+            
+            return fullText;
+          } catch (error) {
+            if (streamCallbacks.onError) {
+              streamCallbacks.onError(error instanceof Error ? error : new Error(String(error)));
+            }
+            throw error;
+          }
+        } else {
+          // Non-streaming fallback
+          const response = await phi4Client.path('/chat/completions').post({
+            body: {
+              messages: messages.map(m => ({ role: m.role, content: m.content })),
+              temperature: 1.0,
+              top_p: 1.0,
+              max_tokens: 1000,
+              model: phi4Model,
+            },
+          });
+          
+          if (isUnexpected(response)) {
+            const errorMsg = 'error' in response.body ? 
+              response.body.error?.message || 'GitHub AI model error' : 
+              'GitHub AI model error';
+            throw new Error(errorMsg);
+          }
+          
+          const responseText = response.body.choices[0].message.content;
+          
+          // Cache the response
+          responseCache.set(cacheKey, {
+            response: responseText,
+            timestamp: Date.now()
+          });
+          
+          return responseText;
+        }
+      }
+      // Use ChatGPT (OpenAI o4-mini) model
+      else if (this.model === 'chatgpt-o4-mini') {
+        const o4Client = ModelClient(
+          'https://models.github.ai/inference',
+          new AzureKeyCredential(this.token),
+          { apiVersion: '2024-12-01-preview' }
+        );
+        
+        const o4Model = 'openai/o4-mini';
+        const o4SystemPrompt = getSystemPrompt(this.model);
+        const o4Messages = [
+          { role: 'developer', content: o4SystemPrompt },
           ...messages.map(msg => ({
             role: msg.role === 'agent' ? 'assistant' : msg.role,
             content: msg.content,
           })),
         ];
-        const response = await client.path('/chat/completions').post({
-          body: {
-            messages: formattedMessages,
-            model,
-          },
-        });
-        if (isUnexpected(response)) {
-          const errorMsg = 'error' in response.body ? 
-            response.body.error?.message || 'GitHub AI model error' : 
-            'GitHub AI model error';
-          throw new Error(errorMsg);
-        }
-        return response.body.choices[0].message.content;
       }
       // Use xAI Grok-3 model
       else if (this.model === env.AI_MODELS.GROK_3 || this.model === 'xai/grok-3') {
@@ -353,12 +517,12 @@ class AIService {
       }
       // Default: Use GitHub AI (Llama, OpenAI, Mistral, etc)
       // Get the system prompt for the current model
-      const systemPrompt = getSystemPrompt(this.model);
+      const defaultSystemPrompt = getSystemPrompt(this.model);
       
       // Convert any 'agent' role (from our UI) to 'assistant' for the API
-      const formattedMessages = [
+      const defaultFormattedMessages = [
         // Add the system prompt as the first message
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: defaultSystemPrompt },
         // Then add all the user messages
         ...messages.map(msg => ({
           role: msg.role === 'agent' ? 'assistant' : msg.role,
@@ -378,47 +542,133 @@ class AIService {
         frequency_penalty: 0.1, // Slight frequency penalty often speeds up generation
       };
       
-      console.log(`Using model: ${this.model} with system prompt: ${systemPrompt.substring(0, 50)}...`);
+      console.log(`Using model: ${this.model} with system prompt: ${defaultSystemPrompt.substring(0, 50)}...`);
       console.log(`Model parameters: temperature=${speedOptimizedParams.temperature}, max_tokens=${speedOptimizedParams.max_tokens}`);
       
-      // Use the model-specific client from the pool
-      const response = await client.path("/chat/completions").post({
-        body: {
-          messages: formattedMessages,
-          ...speedOptimizedParams, // Apply speed-optimized parameters
-          model: this.model
-        },
-        tracingOptions: {
-          tracingId: `model_request_${Date.now()}` // Add tracing for performance monitoring
+      // Use streaming if enabled and callbacks provided
+      if (USE_STREAMING && streamCallbacks) {
+        try {
+          let fullText = '';
+          
+          const streamingResponse = await client.path("/chat/completions").post({
+            body: {
+              messages: defaultFormattedMessages,
+              ...speedOptimizedParams,
+              model: this.model,
+              stream: true // Enable streaming
+            },
+            tracingOptions: {
+              tracingId: `stream_request_${Date.now()}`
+            }
+          });
+          
+          const reader = streamingResponse.body.getReader();
+          const decoder = new TextDecoder();
+          
+          // Process the stream
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.substring(6);
+                if (data === '[DONE]') break;
+                
+                try {
+                  const parsed = JSON.parse(data) as StreamingResponse;
+                  const content = parsed.choices[0]?.delta?.content || '';
+                  
+                  if (content) {
+                    fullText += content;
+                    streamCallbacks.onToken?.(content);
+                  }
+                } catch (e) {
+                  console.error('Error parsing streaming response:', e);
+                }
+              }
+            }
+          }
+          
+          // Signal completion
+          streamCallbacks.onComplete?.(fullText);
+          
+          // Cache the complete response
+          responseCache.set(cacheKey, {
+            response: fullText,
+            timestamp: Date.now()
+          });
+          
+          return fullText;
+        } catch (error) {
+          if (streamCallbacks.onError) {
+            streamCallbacks.onError(error instanceof Error ? error : new Error(String(error)));
+          }
+          throw error;
         }
-      });
+      } else {
+        // Non-streaming fallback
+        const response = await client.path("/chat/completions").post({
+          body: {
+            messages: defaultFormattedMessages,
+            ...speedOptimizedParams, // Apply speed-optimized parameters
+            model: this.model
+          },
+          tracingOptions: {
+            tracingId: `model_request_${Date.now()}` // Add tracing for performance monitoring
+          }
+        });
 
-      if (isUnexpected(response)) {
-        console.error('API Error:', response.body);
-        // Handle error response properly with typechecking
-        const errorMsg = 'error' in response.body ? 
-          response.body.error?.message || 'Unexpected error occurred' : 
-          'Unexpected error occurred';
-        throw new Error(errorMsg);
-      }
+        if (isUnexpected(response)) {
+          console.error('API Error:', response.body);
+          // Handle error response properly with typechecking
+          const errorMsg = 'error' in response.body ? 
+            response.body.error?.message || 'Unexpected error occurred' : 
+            'Unexpected error occurred';
+          
+          if (streamCallbacks?.onError) {
+            streamCallbacks.onError(new Error(errorMsg));
+          }
+          
+          throw new Error(errorMsg);
+        }
 
-      // Ensure we have a valid response with content by properly type checking
-      if (!isUnexpected(response) && 
-          (!response.body.choices || 
-           response.body.choices.length === 0 || 
-           !response.body.choices[0].message)) {
-        return 'No response generated from the model.';
+        // Ensure we have a valid response with content by properly type checking
+        if (!isUnexpected(response) && 
+            (!response.body.choices || 
+             response.body.choices.length === 0 || 
+             !response.body.choices[0].message)) {
+          const errorMsg = 'No response generated from the model.';
+          
+          if (streamCallbacks?.onError) {
+            streamCallbacks.onError(new Error(errorMsg));
+          }
+          
+          return errorMsg;
+        }
+        
+        const responseContent = response.body.choices[0].message.content || '';
+        
+        // Cache the response for future use
+        responseCache.set(cacheKey, {
+          response: responseContent,
+          timestamp: Date.now()
+        });
+        
+        // Send the complete response if streaming callbacks provided
+        if (streamCallbacks?.onToken) {
+          streamCallbacks.onToken(responseContent);
+        }
+        
+        if (streamCallbacks?.onComplete) {
+          streamCallbacks.onComplete(responseContent);
+        }
+        
+        return responseContent;
       }
-      
-      const responseContent = response.body.choices[0].message.content || '';
-      
-      // Cache the response for future use
-      responseCache.set(cacheKey, {
-        response: responseContent,
-        timestamp: Date.now()
-      });
-      
-      return responseContent;
     } catch (error) {
       console.error('Error generating response:', error);
       throw error;
@@ -445,6 +695,10 @@ class AIService {
         // Use existing client from pool
         this.client = this.clientPool.get(modelId)!;
       }
+      
+      // Clear any rate limiting that might have been happening
+      // to ensure the model change is as fast as possible
+      this.clearCache(modelId);
     }
   }
   
