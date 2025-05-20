@@ -437,13 +437,16 @@ class AIService {
           
           const responseText = response.body.choices[0].message.content;
           
-          // Cache the response
-          responseCache.set(cacheKey, {
-            response: responseText,
-            timestamp: Date.now()
-          });
+          // Only cache if responseText is not null
+          if (responseText !== null) {
+            // Cache the response
+            responseCache.set(cacheKey, {
+              response: responseText,
+              timestamp: Date.now()
+            });
+          }
           
-          return responseText;
+          return responseText || '';
         }
       }
       // Use ChatGPT (OpenAI o4-mini) model
