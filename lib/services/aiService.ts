@@ -275,35 +275,6 @@ class AIService {
           const error = await resp.text();
           throw new Error("Gemini API error: " + error);
         }
-        const data = await resp.json();
-        if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
-          return "No response generated from Gemini.";
-        }
-        return data.candidates[0].content.parts[0].text;
-      }
-      // Use Phi-4 Mini model
-      else if (this.model === 'phi-4-mini') {
-        const token = process.env.GITHUB_TOKEN || env.GITHUB_TOKEN;
-        const endpoint = 'https://models.github.ai/inference';
-        const model = 'microsoft/Phi-4-mini-reasoning';
-        const client = ModelClient(endpoint, new AzureKeyCredential(token));
-        const response = await client.path('/chat/completions').post({
-          body: {
-            messages: messages.map(m => ({ role: m.role, content: m.content })),
-            temperature: 1.0,
-            top_p: 1.0,
-            max_tokens: 1000,
-            model,
-          },
-        });
-        if (response.body?.error) {
-          throw new Error(response.body.error.message || 'GitHub AI model error');
-        }
-        return response.body.choices[0].message.content;
-      }
-      // Use ChatGPT (OpenAI o4-mini) model
-      else if (this.model === 'chatgpt-o4-mini') {
-        const token = process.env.GITHUB_TOKEN || env.GITHUB_TOKEN;
         const endpoint = 'https://models.github.ai/inference';
         const model = 'openai/o4-mini';
         const client = ModelClient(endpoint, new AzureKeyCredential(token), { apiVersion: '2024-12-01-preview' });
@@ -321,8 +292,11 @@ class AIService {
             model,
           },
         });
-        if (response.body?.error) {
-          throw new Error(response.body.error.message || 'GitHub AI model error');
+        if (isUnexpected(response)) {
+          const errorMsg = 'error' in response.body ? 
+            response.body.error?.message || 'GitHub AI model error' : 
+            'GitHub AI model error';
+          throw new Error(errorMsg);
         }
         return response.body.choices[0].message.content;
       }
@@ -366,7 +340,12 @@ class AIService {
             return 'Sorry, there was an issue connecting to the Grok-3 model.';
           }
           
-          return response.body.choices[0].message.content || 'No response from Grok-3.';
+          // Properly type check before accessing choices
+          if (!isUnexpected(response) && response.body.choices && response.body.choices.length > 0) {
+            return response.body.choices[0].message.content || 'No response from Grok-3.';
+          }
+          
+          return 'No response from Grok-3.';
           
         } catch (error: any) {
           return 'Sorry, there was an error connecting to the Grok-3 model.';
