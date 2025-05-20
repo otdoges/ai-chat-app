@@ -466,9 +466,9 @@ class AIService {
       }
       // Use xAI Grok-3 model
       else if (this.model === env.AI_MODELS.GROK_3 || this.model === 'xai/grok-3') {
-        // Create a fresh token and endpoint for this call
-        const token = process.env.GITHUB_TOKEN || env.GITHUB_TOKEN;
+        // Use the current endpoint or default to the standard one
         const endpoint = this.endpoint || 'https://models.github.ai/inference';
+        // Make sure we have a model ID, can't be null
         const model = 'xai/grok-3';
         
         // Create a dedicated client for Grok
@@ -573,7 +573,12 @@ class AIService {
             throw new Error(`Streaming request failed: ${streamingResponse.statusText}`);
           }
           
-          const reader = streamingResponse.body?.getReader();
+          // Check if reader exists before proceeding
+          if (!streamingResponse.body) {
+            throw new Error('No response body received for streaming');
+          }
+          
+          const reader = streamingResponse.body.getReader();
           const decoder = new TextDecoder();
           
           // Process the stream
