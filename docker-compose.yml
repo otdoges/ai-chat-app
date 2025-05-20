@@ -1,0 +1,29 @@
+services:
+  coolify:
+    image: coollabsio/coolify
+    container_name: coolify
+    ports:
+      - "3000:3000" # Coolify Dashboard
+    volumes:
+      - coolify_data:/app/data
+    environment:
+      - COOLIFY_SECRET_KEY=changeme
+    restart: unless-stopped
+
+  app:
+    image: node:20-alpine
+    container_name: ai-chat-app
+    working_dir: /usr/src/app
+    volumes:
+      - ./:/usr/src/app
+    command: sh -c "npm install && npm run build && npm start"
+    ports:
+      - "3001:3000" # Change if your app runs on a different port
+    env_file:
+      - .env
+    depends_on:
+      - coolify
+    restart: unless-stopped
+
+volumes:
+  coolify_data:

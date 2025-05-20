@@ -1,0 +1,60 @@
+<svg width="600" height="800" viewBox="0 0 600 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="600" height="800" rx="16" fill="#111111"/>
+  
+  <!-- Header -->
+  <rect x="0" y="0" width="600" height="70" rx="16" fill="#141414"/>
+  <text x="70" y="45" font-family="Arial" font-size="30" font-weight="bold" fill="white">Select a model</text>
+  
+  <!-- Model Selector Button -->
+  <rect x="450" y="15" width="120" height="40" rx="8" fill="#1A1A1A"/>
+  <text x="490" y="40" font-family="Arial" font-size="18" text-anchor="middle" fill="#9e9e9e">Select</text>
+  <path d="M540 30 L550 40 L560 30" stroke="#9e9e9e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  
+  <!-- User Message 1 -->
+  <circle cx="90" cy="120" r="40" fill="#6D5DFC"/>
+  <circle cx="90" cy="120" r="30" fill="#141414"/>
+  <rect x="160" y="100" width="320" height="60" rx="12" fill="#141414"/>
+  <rect x="180" y="115" width="280" height="10" rx="2" fill="#9e9e9e"/>
+  <rect x="180" y="135" width="240" height="10" rx="2" fill="#9e9e9e"/>
+  
+  <!-- AI Response 1 -->
+  <rect x="140" y="200" width="420" height="80" rx="12" fill="#6D5DFC"/>
+  <rect x="160" y="215" width="380" height="10" rx="2" fill="white"/>
+  <rect x="160" y="235" width="360" height="10" rx="2" fill="white"/>
+  <rect x="160" y="255" width="300" height="10" rx="2" fill="white"/>
+  
+  <!-- User Message 2 -->
+  <circle cx="90" cy="320" r="40" fill="#6D5DFC"/>
+  <circle cx="90" cy="320" r="30" fill="#141414"/>
+  <rect x="160" y="300" width="320" height="60" rx="12" fill="#141414"/>
+  <rect x="180" y="315" width="280" height="10" rx="2" fill="#9e9e9e"/>
+  <rect x="180" y="335" width="240" height="10" rx="2" fill="#9e9e9e"/>
+  
+  <!-- AI Response 2 -->
+  <rect x="140" y="400" width="420" height="80" rx="12" fill="#6D5DFC"/>
+  <rect x="160" y="415" width="380" height="10" rx="2" fill="white"/>
+  <rect x="160" y="435" width="360" height="10" rx="2" fill="white"/>
+  <rect x="160" y="455" width="300" height="10" rx="2" fill="white"/>
+  
+  <!-- User Message 3 -->
+  <circle cx="90" cy="520" r="40" fill="#6D5DFC"/>
+  <circle cx="90" cy="520" r="30" fill="#141414"/>
+  <rect x="160" y="500" width="320" height="60" rx="12" fill="#141414"/>
+  <rect x="180" y="515" width="280" height="10" rx="2" fill="#9e9e9e"/>
+  <rect x="180" y="535" width="240" height="10" rx="2" fill="#9e9e9e"/>
+  
+  <!-- AI Response 3 -->
+  <rect x="140" y="600" width="420" height="80" rx="12" fill="#6D5DFC"/>
+  <rect x="160" y="615" width="380" height="10" rx="2" fill="white"/>
+  <rect x="160" y="635" width="360" height="10" rx="2" fill="white"/>
+  <rect x="160" y="655" width="300" height="10" rx="2" fill="white"/>
+  
+  <!-- Input Box -->
+  <rect x="70" y="720" width="460" height="60" rx="8" fill="#141414"/>
+  <text x="120" y="755" font-family="Arial" font-size="18" fill="#6D6D6D">Text a message</text>
+  
+  <!-- Send Button -->
+  <rect x="490" y="735" width="30" height="30" rx="4" fill="#141414"/>
+  <path d="M495 750 L515 750 L505 735" stroke="#6D5DFC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

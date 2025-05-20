@@ -1,0 +1,40 @@
+<svg width="360" height="640" viewBox="0 0 360 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="360" height="640" fill="#121212"/>
+  
+  <!-- Chat Messages -->
+  <rect x="15" y="80" width="330" height="100" rx="8" fill="#1E1E1E"/>
+  <rect x="30" y="100" width="285" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  <rect x="30" y="122" width="270" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  <rect x="30" y="144" width="240" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  <rect x="30" y="166" width="200" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  
+  <rect x="15" y="200" width="330" height="120" rx="8" fill="#1A1A1A"/>
+  <rect x="30" y="220" width="285" height="12" rx="2" fill="#ECECEC"/>
+  <rect x="30" y="242" width="270" height="12" rx="2" fill="#ECECEC"/>
+  <rect x="30" y="264" width="240" height="12" rx="2" fill="#ECECEC"/>
+  <rect x="30" y="286" width="200" height="12" rx="2" fill="#ECECEC"/>
+  <rect x="30" y="308" width="160" height="12" rx="2" fill="#ECECEC"/>
+  
+  <rect x="15" y="340" width="330" height="100" rx="8" fill="#1E1E1E"/>
+  <rect x="30" y="360" width="285" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  <rect x="30" y="382" width="270" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  <rect x="30" y="404" width="240" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  <rect x="30" y="426" width="200" height="12" rx="2" fill="#6D5DFC" fill-opacity="0.6"/>
+  
+  <!-- Input area -->
+  <rect x="15" y="560" width="330" height="60" rx="8" fill="#1E1E1E"/>
+  <rect x="30" y="584" width="270" height="12" rx="2" fill="#ECECEC" fill-opacity="0.2"/>
+  <circle cx="315" cy="590" r="20" fill="#6D5DFC"/>
+  
+  <!-- Avatar/Model Icons -->
+  <circle cx="330" cy="100" r="15" fill="#6D5DFC"/>
+  <circle cx="330" cy="220" r="15" fill="#ECECEC"/>
+  <circle cx="330" cy="360" r="15" fill="#6D5DFC"/>
+  
+  <!-- Header -->
+  <rect x="0" y="0" width="360" height="50" fill="#0F0F0F"/>
+  <rect x="15" y="17" width="100" height="16" rx="2" fill="#6D5DFC"/>
+  <circle cx="315" cy="25" r="15" fill="#1E1E1E"/>
+  <circle cx="345" cy="25" r="15" fill="#1E1E1E"/>
+</svg>
