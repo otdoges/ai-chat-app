@@ -154,8 +154,8 @@ class AIService {
           maxRetries: 3,
           retryDelayInMs: 300,
           maxRetryDelayInMs: 2000
-        },
-        timeout: CONNECTION_TIMEOUT
+        }
+        // timeout option removed as it's not supported in the type
       }
     );
     
@@ -179,8 +179,8 @@ class AIService {
           maxRetries: 3,
           retryDelayInMs: 300,
           maxRetryDelayInMs: 2000
-        },
-        timeout: CONNECTION_TIMEOUT
+        }
+        // timeout option removed as it's not supported in the type
       }
     );
     
@@ -472,7 +472,10 @@ class AIService {
         const model = 'xai/grok-3';
         
         // Create a dedicated client for Grok
-        const grokClient = ModelClient(endpoint, new AzureKeyCredential(token));
+        const grokClient = ModelClient(
+          endpoint,
+          new AzureKeyCredential(this.token || '')
+        );
         
         const systemPrompt = getSystemPrompt(this.model);
         const formattedMessages = [
@@ -550,19 +553,27 @@ class AIService {
         try {
           let fullText = '';
           
-          const streamingResponse = await client.path("/chat/completions").post({
-            body: {
+          // For streaming, we need to use fetch directly since the ModelClient doesn't support streaming properly
+          const streamingResponse = await fetch(`${this.endpoint}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'api-key': this.token,
+              'api-version': '2024-12-01-preview'
+            },
+            body: JSON.stringify({
               messages: defaultFormattedMessages,
               ...speedOptimizedParams,
               model: this.model,
               stream: true // Enable streaming
-            },
-            tracingOptions: {
-              tracingId: `stream_request_${Date.now()}`
-            }
+            })
           });
           
-          const reader = streamingResponse.body.getReader();
+          if (!streamingResponse.ok) {
+            throw new Error(`Streaming request failed: ${streamingResponse.statusText}`);
+          }
+          
+          const reader = streamingResponse.body?.getReader();
           const decoder = new TextDecoder();
           
           // Process the stream
@@ -617,9 +628,7 @@ class AIService {
             ...speedOptimizedParams, // Apply speed-optimized parameters
             model: this.model
           },
-          tracingOptions: {
-            tracingId: `model_request_${Date.now()}` // Add tracing for performance monitoring
-          }
+          // Tracing options removed as tracingId is not supported in the type
         });
 
         if (isUnexpected(response)) {

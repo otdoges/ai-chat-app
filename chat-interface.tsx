@@ -176,7 +176,7 @@ export default function ChatInterface() {
     }
   }, [messages])
 
-  // Function to send a message to the AI model
+  // Function to send a message to the AI model with streaming support
   const sendMessage = async () => {
     if (!input.trim()) return
     
@@ -200,14 +200,33 @@ export default function ChatInterface() {
     // Set loading state
     setIsLoading(true)
     
+    // Create a temporary ID for the streaming message
+    const tempMessageId = `temp-id-${Date.now()}`
+    
+    // Add a placeholder message for the streaming response
+    const placeholderMessage: Message = {
+      id: tempMessageId,
+      role: "agent",
+      content: "", // Start with empty content
+      timestamp: new Date().toLocaleTimeString(),
+      modelId: currentModel
+    }
+    
+    // Add the placeholder to the UI
+    setMessages((prev: Message[]) => [...prev, placeholderMessage])
+    
     try {
-      // POST both messages and modelId to ensure backend uses correct model
+      // Use streaming endpoint for faster responses
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream' // Request streaming response
+        },
         body: JSON.stringify({
           messages: [...messages, userMessage],
           modelId: currentModel,
+          stream: true // Request streaming
         }),
       })
       
@@ -216,42 +235,140 @@ export default function ChatInterface() {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.error || errorData.details || 'Failed to get response from AI';
         
-        // Add an error message from the AI in the chat
-        const errorAiMessage: Message = {
+        // Update the placeholder with error message
+        const errorContent = `⚠️ Error: ${errorMessage}\n\nIf this issue persists, please [report it on GitHub](https://github.com/username/ai-chat-app/issues/new?title=Error:+${encodeURIComponent(errorMessage)})`
+        
+        setMessages((prev: Message[]) => 
+          prev.map(msg => 
+            msg.id === tempMessageId 
+              ? {...msg, content: errorContent} 
+              : msg
+          )
+        )
+        
+        // Save error message to IndexedDB
+        const finalErrorMessage: Message = {
           role: "agent",
-          content: `⚠️ Error: ${errorMessage}\n\nIf this issue persists, please [report it on GitHub](https://github.com/username/ai-chat-app/issues/new?title=Error:+${encodeURIComponent(errorMessage)})`,
+          content: errorContent,
           timestamp: new Date().toLocaleTimeString(),
           modelId: currentModel
         }
-        
-        // Update UI with error message
-        setMessages((prev: Message[]) => [...prev, errorAiMessage])
-        await dbService.addMessage(errorAiMessage)
+        await dbService.addMessage(finalErrorMessage)
         
         // Also show as toast
         toast.error(errorMessage)
         throw new Error(errorMessage)
       }
       
-      const data = await response.json()
-      const aiMessage: Message = {
-        role: "agent",
-        content: data.message.content,
-        timestamp: new Date().toLocaleTimeString(),
-        modelId: currentModel // Associate with current model
+      // If response is OK, check if it's a streaming response
+      if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
+        // Process the stream
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        let accumulatedResponse = ''
+        
+        if (reader) {
+          try {
+            while (true) {
+              const { value, done } = await reader.read()
+              if (done) break
+              
+              const chunk = decoder.decode(value, { stream: true })
+              const lines = chunk.split('\n').filter(line => line.trim() !== '')
+              
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const content = line.substring(6)
+                    if (content === '[DONE]') continue
+                    
+                    // Extract the content from the stream
+                    const data = JSON.parse(content)
+                    const token = data.token || ''
+                    
+                    if (token) {
+                      // Append the new token to the accumulated response
+                      accumulatedResponse += token
+                      
+                      // Update the placeholder message with the accumulated response
+                      setMessages((prev: Message[]) => 
+                        prev.map(msg => 
+                          msg.id === tempMessageId 
+                            ? {...msg, content: accumulatedResponse} 
+                            : msg
+                        )
+                      )
+                    }
+                  } catch (e) {
+                    console.error('Error parsing streaming chunk:', e)
+                  }
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock()
+          }
+        }
+        
+        // Stream is complete, save the message to IndexedDB
+        if (accumulatedResponse) {
+          const finalMessage: Message = {
+            role: "agent",
+            content: accumulatedResponse,
+            timestamp: new Date().toLocaleTimeString(),
+            modelId: currentModel
+          }
+          
+          // Replace the temporary message with the final one
+          setMessages((prev: Message[]) => 
+            prev.map(msg => 
+              msg.id === tempMessageId 
+                ? {...finalMessage} 
+                : msg
+            )
+          )
+          
+          // Save to IndexedDB
+          await dbService.addMessage(finalMessage)
+        }
+      } else {
+        // Fallback to non-streaming response
+        const data = await response.json()
+        const aiMessage: Message = {
+          role: "agent",
+          content: data.message.content,
+          timestamp: new Date().toLocaleTimeString(),
+          modelId: currentModel
+        }
+        
+        // Replace the placeholder with the complete message
+        setMessages((prev: Message[]) => 
+          prev.map(msg => 
+            msg.id === tempMessageId 
+              ? aiMessage 
+              : msg
+          )
+        )
+        
+        // Save to IndexedDB
+        await dbService.addMessage(aiMessage)
       }
-      
-      // Update UI with AI response
-      setMessages((prev: Message[]) => [...prev, aiMessage])
-      
-      // Save AI message to IndexedDB
-      await dbService.addMessage(aiMessage)
-      
     } catch (error: any) {
       console.error('Error sending message:', error)
       // Only show toast if we haven't already shown a more specific message
       if (!error.message || error.message === 'Failed to fetch') {
         toast.error('Network error: Unable to connect to the AI service')
+        
+        // Update the placeholder with a network error message
+        const networkErrorContent = "⚠️ Network error: Unable to connect to the AI service. Please check your internet connection and try again."
+        
+        setMessages((prev: Message[]) => 
+          prev.map(msg => 
+            msg.id === tempMessageId 
+              ? {...msg, content: networkErrorContent} 
+              : msg
+          )
+        )
       }
     } finally {
       setIsLoading(false)
