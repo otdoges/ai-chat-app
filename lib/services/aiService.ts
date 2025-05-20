@@ -369,7 +369,14 @@ class AIService {
               },
             });
             
-            const reader = streamingResponse.body.getReader();
+            // Check if the response is unexpected
+            if (isUnexpected(streamingResponse)) {
+              throw new Error(`API error: ${streamingResponse.status} - ${JSON.stringify(streamingResponse.body)}`);
+            }
+            
+            // Access the response body as a ReadableStream
+            const responseBody = streamingResponse.body as unknown as { getReader: () => ReadableStreamDefaultReader<Uint8Array> };
+            const reader = responseBody.getReader();
             const decoder = new TextDecoder();
             
             // Process the stream
