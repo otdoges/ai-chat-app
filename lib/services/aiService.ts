@@ -79,11 +79,17 @@ function getModelParams(modelId: string): ModelParams {
   return modelParams[modelId] || { temperature: 0.7, max_tokens: 1000 };
 }
 
+// Simple cache for response data
+const responseCache = new Map<string, {response: string, timestamp: number}>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+const CONNECTION_TIMEOUT = 15000; // 15 seconds timeout for connections
+
 class AIService {
   private token: string;
   private endpoint: string;
   private model: string;
   private client: ReturnType<typeof ModelClient> | null = null;
+  private clientPool: Map<string, ReturnType<typeof ModelClient>> = new Map();
 
   constructor() {
     // Use environment config
@@ -94,6 +100,24 @@ class AIService {
     if (typeof window === 'undefined') {
       // Only create client on server-side
       this.initClient();
+      
+      // Pre-initialize clients for commonly used models to reduce cold start time
+      this.preInitializeCommonClients();
+    }
+  }
+  
+  private preInitializeCommonClients() {
+    // Pre-initialize clients for commonly used models
+    const commonModels = [
+      env.AI_MODELS.OPENAI_GPT_4_1,
+      env.AI_MODELS.META_LLAMA_4_MAVERICK,
+      env.AI_MODELS.MISTRAL_SMALL
+    ];
+    
+    for (const model of commonModels) {
+      if (model !== this.model) { // Skip current model as it's already initialized
+        this.getOrCreateClient(model);
+      }
     }
   }
   
@@ -103,13 +127,54 @@ class AIService {
     this.client = ModelClient(
       this.endpoint,
       new AzureKeyCredential(this.token),
-      { apiVersion: "2024-12-01-preview" }
+      { 
+        apiVersion: "2024-12-01-preview",
+        retryOptions: {
+          maxRetries: 3,
+          retryDelayInMs: 300,
+          maxRetryDelayInMs: 2000
+        },
+        timeout: CONNECTION_TIMEOUT
+      }
     );
+    
+    // Add to client pool
+    this.clientPool.set(this.model, this.client);
+  }
+  
+  private getOrCreateClient(modelId: string): ReturnType<typeof ModelClient> {
+    // Check if we already have a client for this model
+    if (this.clientPool.has(modelId)) {
+      return this.clientPool.get(modelId)!;
+    }
+    
+    // Create a new client for this model
+    const client = ModelClient(
+      this.endpoint,
+      new AzureKeyCredential(this.token),
+      { 
+        apiVersion: "2024-12-01-preview",
+        retryOptions: {
+          maxRetries: 3,
+          retryDelayInMs: 300,
+          maxRetryDelayInMs: 2000
+        },
+        timeout: CONNECTION_TIMEOUT
+      }
+    );
+    
+    // Store in the pool
+    this.clientPool.set(modelId, client);
+    
+    return client;
   }
   
   // Create a fresh client with the current settings
   private refreshClient() {
     console.log(`Refreshing client for model: ${this.model}`);
+    
+    // Remove from client pool
+    this.clientPool.delete(this.model);
     
     // Force client recreation by nullifying first
     this.client = null;
@@ -119,10 +184,43 @@ class AIService {
       this.initClient();
     }
   }
+  
+  // Generate a cache key from messages and model ID
+  private generateCacheKey(messages: ChatMessage[], modelId: string): string {
+    // Only use the last few messages for caching to avoid too-specific keys
+    const lastMessages = messages.slice(-3); // Use last 3 messages for cache key
+    const messageString = lastMessages.map(m => `${m.role}:${m.content}`).join('|');
+    return `${modelId}:${messageString}`;
+  }
+  
+  // Clear cache for a specific model or all models
+  public clearCache(modelId?: string) {
+    if (modelId) {
+      // Clear cache entries for this model only
+      for (const key of responseCache.keys()) {
+        if (key.startsWith(`${modelId}:`)) {
+          responseCache.delete(key);
+        }
+      }
+    } else {
+      // Clear all cache
+      responseCache.clear();
+    }
+  }
 
   async generateResponse(messages: ChatMessage[]): Promise<string> {
     if (!this.token) {
       throw new Error('GitHub token is not configured. Please set the GITHUB_TOKEN environment variable.');
+    }
+    
+    // Generate a cache key from the messages and model
+    const cacheKey = this.generateCacheKey(messages, this.model);
+    
+    // Check cache for existing response
+    const cachedData = responseCache.get(cacheKey);
+    if (cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL)) {
+      console.log('Using cached response for', this.model);
+      return cachedData.response;
     }
     
     // Initialize client if it doesn't exist yet (server-side)
@@ -133,6 +231,9 @@ class AIService {
     if (!this.client) {
       throw new Error('Failed to initialize AI client');
     }
+    
+    // Get client from pool (either the current one or create a model-specific one)
+    const client = this.clientPool.get(this.model) || this.getOrCreateClient(this.model);
 
     try {
       // Use Gemini API if Gemini model is selected
@@ -289,28 +390,56 @@ class AIService {
       // Get the optimal parameters for this model
       const params = getModelParams(this.model);
       
-      console.log(`Using model: ${this.model} with system prompt: ${systemPrompt.substring(0, 50)}...`);
-      console.log(`Model parameters: temperature=${params.temperature}, max_tokens=${params.max_tokens}`);
+      // Speed optimization: adjust parameters for faster responses
+      // Lower max_tokens and higher temperature can lead to quicker generations
+      const speedOptimizedParams = {
+        ...params,
+        max_tokens: Math.min(params.max_tokens || 1000, 600), // Cap max tokens for faster response
+        presence_penalty: 0.1, // Slight presence penalty often speeds up generation
+        frequency_penalty: 0.1, // Slight frequency penalty often speeds up generation
+      };
       
-      const response = await this.client.path("/chat/completions").post({
+      console.log(`Using model: ${this.model} with system prompt: ${systemPrompt.substring(0, 50)}...`);
+      console.log(`Model parameters: temperature=${speedOptimizedParams.temperature}, max_tokens=${speedOptimizedParams.max_tokens}`);
+      
+      // Use the model-specific client from the pool
+      const response = await client.path("/chat/completions").post({
         body: {
           messages: formattedMessages,
-          ...params, // Apply model-specific parameters
+          ...speedOptimizedParams, // Apply speed-optimized parameters
           model: this.model
+        },
+        tracingOptions: {
+          tracingId: `model_request_${Date.now()}` // Add tracing for performance monitoring
         }
       });
 
       if (isUnexpected(response)) {
         console.error('API Error:', response.body);
-        throw new Error(response.body.error?.message || 'Unexpected error occurred');
+        // Handle error response properly with typechecking
+        const errorMsg = 'error' in response.body ? 
+          response.body.error?.message || 'Unexpected error occurred' : 
+          'Unexpected error occurred';
+        throw new Error(errorMsg);
       }
 
-      // Ensure we have a valid response with content
-      if (!response.body.choices || response.body.choices.length === 0 || !response.body.choices[0].message) {
+      // Ensure we have a valid response with content by properly type checking
+      if (!isUnexpected(response) && 
+          (!response.body.choices || 
+           response.body.choices.length === 0 || 
+           !response.body.choices[0].message)) {
         return 'No response generated from the model.';
       }
       
-      return response.body.choices[0].message.content || '';
+      const responseContent = response.body.choices[0].message.content || '';
+      
+      // Cache the response for future use
+      responseCache.set(cacheKey, {
+        response: responseContent,
+        timestamp: Date.now()
+      });
+      
+      return responseContent;
     } catch (error) {
       console.error('Error generating response:', error);
       throw error;
@@ -329,8 +458,14 @@ class AIService {
       console.log(`Changing model from ${this.model} to ${modelId}`);
       this.model = modelId;
       
-      // Refresh the client to ensure it uses the new model settings
-      this.refreshClient();
+      // Check if we already have a client for this model in the pool
+      if (!this.clientPool.has(modelId)) {
+        // Initialize a new client for this model
+        this.client = this.getOrCreateClient(modelId);
+      } else {
+        // Use existing client from pool
+        this.client = this.clientPool.get(modelId)!;
+      }
     }
   }
   
