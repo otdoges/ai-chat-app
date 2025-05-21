@@ -7,18 +7,29 @@ function createStreamResponse() {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
+      // Setup timeout for slow responses
+      const timeout = setTimeout(() => {
+        const payload = JSON.stringify({ error: 'AI response timeout after 10 seconds' });
+        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+        controller.close();
+      }, 10000); // 10 seconds timeout
+      
       // Make these callbacks available to be called from outside
       streamCallbacks.onToken = (token: string) => {
+        // Reset timeout on token received
+        clearTimeout(timeout);
         const payload = JSON.stringify({ token });
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       };
       
       streamCallbacks.onComplete = (fullText: string) => {
+        clearTimeout(timeout);
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
         controller.close();
       };
       
       streamCallbacks.onError = (error: Error) => {
+        clearTimeout(timeout);
         const payload = JSON.stringify({ error: error.message });
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
         controller.close();
