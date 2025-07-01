@@ -42,12 +42,6 @@ const nextConfig = {
       };
     }
 
-    // Optimize imports
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      'react-syntax-highlighter/dist/esm/styles/prism': 'react-syntax-highlighter/dist/esm/styles/prism/oneDark',
-    };
-
     return config;
   },
   // Compression and caching

@@ -20,7 +20,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { availableModels } from "@/lib/services/aiService"
-import env from "@/lib/env"
 import { Badge } from "@/components/ui/badge"
 import { getSystemPromptDescription } from "@/lib/systemPrompt"
 
@@ -29,7 +28,7 @@ interface ModelSelectorProps {
   currentModel: string
 }
 
-// Provider icons mapping for better visual identification
+// Provider icons mapping for visual identification
 const getProviderIcon = (provider: string) => {
   switch (provider.toLowerCase()) {
     case 'openai': return <Brain className="h-4 w-4 text-green-500" />
@@ -41,7 +40,7 @@ const getProviderIcon = (provider: string) => {
   }
 }
 
-// Enhanced model grouping with better organization
+// Enhanced model grouping
 const allModels = React.useMemo(() => availableModels.map(model => {
   let provider = 'Other';
   if (model.provider) {
@@ -56,32 +55,32 @@ const allModels = React.useMemo(() => availableModels.map(model => {
   return { ...model, provider };
 }), []);
 
-// Optimized model groups with sorted providers
+// Optimized model groups
 const modelGroups = React.useMemo(() => {
   const groups = {
-    'Featured': allModels.filter(m => 
+    'Featured': allModels.filter((m: any) => 
       m.id.includes('gpt-4') || 
       m.id.includes('grok') || 
       m.id.includes('gemini-pro') ||
       m.id.includes('llama-3')
     ).slice(0, 4),
-    'OpenAI': allModels.filter(m => m.provider === 'OpenAI'),
-    'xAI': allModels.filter(m => m.provider === 'xAI' || (typeof m.id === 'string' && m.id.includes('grok'))),
-    'Meta': allModels.filter(m => m.provider === 'Meta'),
-    'Google': allModels.filter(m => m.provider === 'Google'),
-    'Mistral': allModels.filter(m => m.provider === 'Mistral'),
-    'Others': allModels.filter(m => !['OpenAI', 'Meta', 'Mistral', 'Google', 'xAI'].includes(m.provider)),
+    'OpenAI': allModels.filter((m: any) => m.provider === 'OpenAI'),
+    'xAI': allModels.filter((m: any) => m.provider === 'xAI' || (typeof m.id === 'string' && m.id.includes('grok'))),
+    'Meta': allModels.filter((m: any) => m.provider === 'Meta'),
+    'Google': allModels.filter((m: any) => m.provider === 'Google'),
+    'Mistral': allModels.filter((m: any) => m.provider === 'Mistral'),
+    'Others': allModels.filter((m: any) => !['OpenAI', 'Meta', 'Mistral', 'Google', 'xAI'].includes(m.provider)),
   };
   
   // Remove empty groups
-  return Object.fromEntries(Object.entries(groups).filter(([_, models]) => models.length > 0));
+  return Object.fromEntries(Object.entries(groups).filter(([_, models]) => (models as any[]).length > 0));
 }, []);
 
 export function ModelSelector({ onModelChange, currentModel }: ModelSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const [searchValue, setSearchValue] = React.useState("")
   
-  // Memoized current model info for better performance
+  // Memoized current model info
   const currentModelInfo = React.useMemo(() => {
     const model = availableModels.find(m => m.id === currentModel)
     return {
@@ -97,7 +96,7 @@ export function ModelSelector({ onModelChange, currentModel }: ModelSelectorProp
     
     const filtered: typeof modelGroups = {};
     Object.entries(modelGroups).forEach(([groupName, models]) => {
-      const matchingModels = models.filter(model => 
+      const matchingModels = (models as any[]).filter((model: any) => 
         model.name.toLowerCase().includes(searchValue.toLowerCase()) ||
         model.id.toLowerCase().includes(searchValue.toLowerCase()) ||
         model.provider.toLowerCase().includes(searchValue.toLowerCase())
@@ -112,7 +111,7 @@ export function ModelSelector({ onModelChange, currentModel }: ModelSelectorProp
   const handleSelect = React.useCallback((modelId: string) => {
     onModelChange(modelId);
     setOpen(false);
-    setSearchValue(""); // Clear search when selecting
+    setSearchValue("");
   }, [onModelChange]);
 
   return (
@@ -157,11 +156,11 @@ export function ModelSelector({ onModelChange, currentModel }: ModelSelectorProp
                     {provider !== 'Featured' && getProviderIcon(provider)}
                     {provider}
                     <Badge variant="secondary" className="text-xs">
-                      {models.length}
+                      {(models as any[]).length}
                     </Badge>
                   </div>
                 }>
-                  {models.map((model) => (
+                  {(models as any[]).map((model: any) => (
                     <CommandItem
                       key={model.id}
                       value={`${model.id}-${model.name}-${model.provider}`}

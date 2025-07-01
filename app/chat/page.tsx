@@ -24,18 +24,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Rating } from "@/components/ui/rating"
 
-// Lazy load the syntax highlighter for better initial load performance
-const SyntaxHighlighter = lazy(() => 
-  import('react-syntax-highlighter').then(module => ({
-    default: module.Prism
-  }))
-)
-
-const codeTheme = lazy(() => 
-  import('react-syntax-highlighter/dist/esm/styles/prism').then(module => ({
-    default: module.oneDark
-  }))
-)
+// Lazy load the syntax highlighter for better performance
+const LazyPrism = lazy(() => import('react-syntax-highlighter').then(module => ({ default: module.Prism })))
 
 interface Message {
   id: string;
@@ -54,39 +44,12 @@ interface ChatSession {
   messages: Message[];
 }
 
-// Memoized code block component for better performance
+// Optimized code block component
 const CodeBlock = memo(({ language, code, index }: { language: string; code: string; index: number }) => {
-  const [theme, setTheme] = useState<any>(null);
-  
-  useEffect(() => {
-    codeTheme().then(({ default: oneDark }) => setTheme(oneDark));
-  }, []);
-
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(code);
     toast.success('Code copied to clipboard');
   }, [code]);
-
-  if (!theme) {
-    return (
-      <div className="relative my-2 rounded-lg overflow-hidden border border-gray-700 bg-gray-900">
-        <div className="flex items-center justify-between bg-gray-800 px-4 py-2 text-xs font-medium text-gray-300">
-          <span>{language || 'code'}</span>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={handleCopy}
-            className="h-6 w-6 p-0 hover:bg-gray-700"
-          >
-            <Copy className="h-3 w-3" />
-          </Button>
-        </div>
-        <div className="p-4 font-mono text-sm text-gray-200 whitespace-pre-wrap">
-          {code}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="relative my-2 rounded-lg overflow-hidden border border-gray-700">
@@ -102,18 +65,30 @@ const CodeBlock = memo(({ language, code, index }: { language: string; code: str
         </Button>
       </div>
       <Suspense fallback={
-        <div className="p-4 font-mono text-sm text-gray-200 whitespace-pre-wrap">
+        <div className="p-4 font-mono text-sm text-gray-200 whitespace-pre-wrap bg-gray-900">
           {code}
         </div>
       }>
-        <SyntaxHighlighter
-          language={language.toLowerCase()}
-          style={theme}
-          customStyle={{ margin: 0, borderRadius: 0, background: 'transparent' }}
-          className="text-sm"
-        >
-          {code}
-        </SyntaxHighlighter>
+        <div className="bg-gray-900">
+          <LazyPrism
+            language={language.toLowerCase()}
+            customStyle={{ 
+              margin: 0, 
+              borderRadius: 0, 
+              background: 'rgb(17 24 39)', 
+              padding: '1rem',
+              fontSize: '0.875rem',
+              color: '#e5e7eb'
+            }}
+            codeTagProps={{
+              style: {
+                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace'
+              }
+            }}
+          >
+            {code}
+          </LazyPrism>
+        </div>
       </Suspense>
     </div>
   );
@@ -121,50 +96,49 @@ const CodeBlock = memo(({ language, code, index }: { language: string; code: str
 
 CodeBlock.displayName = 'CodeBlock';
 
-// Optimized message content formatter with better performance
-const formatMessageContent = memo(({ content }: { content: string }) => {
-  const parts = useMemo(() => {
-    return content.split(/(```[\w\s]*\n[\s\S]*?```)/g);
-  }, [content]);
-
-  return (
-    <div className="space-y-2">
-      {parts.map((part, index) => {
-        if (part.startsWith('```')) {
-          const match = part.match(/```([\w\s]*)\n([\s\S]*?)```/);
-          if (match) {
-            const [_, language, code] = match;
-            return <CodeBlock key={index} language={language.trim()} code={code} index={index} />;
-          }
+// Optimized message content formatter
+const MessageContent = memo(({ content }: { content: string }) => {
+  const processedContent = useMemo(() => {
+    // Split content by code blocks
+    const parts = content.split(/(```[\w\s]*\n[\s\S]*?```)/g);
+    
+    return parts.map((part, index) => {
+      if (part.startsWith('```')) {
+        const match = part.match(/```([\w\s]*)\n([\s\S]*?)```/);
+        if (match) {
+          const [_, language, code] = match;
+          return <CodeBlock key={index} language={language.trim()} code={code} index={index} />;
         }
-        
-        // Process inline code and text formatting
-        const processedText = part
-          .split(/(`[^`]+`)/g)
-          .map((segment, i) => {
+      }
+      
+      // Process inline code and regular text
+      const segments = part.split(/(`[^`]+`)/g);
+      return (
+        <div key={index} className="text-sm leading-relaxed">
+          {segments.map((segment, i) => {
             if (segment.startsWith('`') && segment.endsWith('`')) {
               return (
-                <code key={i} className="px-1.5 py-0.5 mx-0.5 bg-gray-800 rounded text-sm font-mono text-blue-300">
+                <code key={i} className="px-1.5 py-0.5 mx-0.5 bg-gray-700 rounded text-sm font-mono text-blue-300">
                   {segment.slice(1, -1)}
                 </code>
               );
             }
-            return segment;
-          });
+            // Process line breaks
+            return segment.split('\n').map((line, j) => (
+              j === 0 ? line : <div key={j}>{line}</div>
+            ));
+          })}
+        </div>
+      );
+    });
+  }, [content]);
 
-        return (
-          <div key={index} className="text-sm leading-relaxed">
-            {processedText}
-          </div>
-        );
-      })}
-    </div>
-  );
+  return <div className="space-y-2">{processedContent}</div>;
 });
 
-formatMessageContent.displayName = 'MessageContent';
+MessageContent.displayName = 'MessageContent';
 
-// Memoized message component for better performance
+// Memoized message component
 const MessageBubble = memo(({ message, isUser }: { message: Message; isUser: boolean }) => {
   return (
     <div className={cn(
@@ -183,7 +157,7 @@ const MessageBubble = memo(({ message, isUser }: { message: Message; isUser: boo
           ? "bg-blue-600 text-white ml-auto" 
           : "bg-gray-800 text-gray-100"
       )}>
-        <formatMessageContent content={message.content} />
+        <MessageContent content={message.content} />
         <div className="text-xs opacity-70 mt-2">
           {message.timestamp}
         </div>
@@ -340,7 +314,7 @@ export default function ChatPage() {
 
   // Get active session and messages
   const activeSession = useMemo(() => 
-    chatSessions.find(cs => cs.id === activeChatId), 
+    chatSessions.find((cs: ChatSession) => cs.id === activeChatId), 
     [chatSessions, activeChatId]
   );
   
@@ -358,7 +332,7 @@ export default function ChatPage() {
       messages: [createMessage("agent", "Hello! How can I help you today?")],
     };
     
-    setChatSessions(prev => [newSession, ...prev]);
+    setChatSessions((prev: ChatSession[]) => [newSession, ...prev]);
     setActiveChatId(newSession.id);
     setInput("");
     
@@ -377,10 +351,10 @@ export default function ChatPage() {
 
   // Delete chat handler
   const handleDeleteChat = useCallback(async (id: string) => {
-    setChatSessions(prev => prev.filter(cs => cs.id !== id));
+    setChatSessions((prev: ChatSession[]) => prev.filter((cs: ChatSession) => cs.id !== id));
     
     if (activeChatId === id) {
-      const remaining = chatSessions.filter(cs => cs.id !== id);
+      const remaining = chatSessions.filter((cs: ChatSession) => cs.id !== id);
       setActiveChatId(remaining[0]?.id || null);
       if (remaining.length === 0) {
         handleNewChat();
@@ -416,7 +390,7 @@ export default function ChatPage() {
     setIsLoading(true);
     
     // Optimistically update UI
-    setChatSessions(prev => prev.map(session => 
+    setChatSessions((prev: ChatSession[]) => prev.map((session: ChatSession) => 
       session.id === activeChatId 
         ? { ...session, messages: [...session.messages, userMessage] }
         : session
@@ -444,7 +418,7 @@ export default function ChatPage() {
       let accumulatedContent = "";
 
       // Add placeholder message for streaming
-      setChatSessions(prev => prev.map(session => 
+      setChatSessions((prev: ChatSession[]) => prev.map((session: ChatSession) => 
         session.id === activeChatId 
           ? { ...session, messages: [...session.messages, aiMessage] }
           : session
@@ -476,7 +450,7 @@ export default function ChatPage() {
                       accumulatedContent += token;
                       
                       // Update streaming message
-                      setChatSessions(prev => prev.map(session => 
+                      setChatSessions((prev: ChatSession[]) => prev.map((session: ChatSession) => 
                         session.id === activeChatId 
                           ? {
                               ...session,
@@ -504,7 +478,7 @@ export default function ChatPage() {
         const data = await response.json();
         accumulatedContent = data.message.content;
         
-        setChatSessions(prev => prev.map(session => 
+        setChatSessions((prev: ChatSession[]) => prev.map((session: ChatSession) => 
           session.id === activeChatId 
             ? {
                 ...session,
@@ -519,7 +493,7 @@ export default function ChatPage() {
       }
 
       // Persist updated session
-      const updatedSession = chatSessions.find(cs => cs.id === activeChatId);
+      const updatedSession = chatSessions.find((cs: ChatSession) => cs.id === activeChatId);
       if (updatedSession) {
         await dbService.addChat?.(updatedSession);
       }
@@ -529,7 +503,7 @@ export default function ChatPage() {
       toast.error('Failed to send message. Please try again.');
       
       // Remove the user message on error
-      setChatSessions(prev => prev.map(session => 
+      setChatSessions((prev: ChatSession[]) => prev.map((session: ChatSession) => 
         session.id === activeChatId 
           ? { ...session, messages: session.messages.filter(msg => msg.id !== userMessage.id) }
           : session
