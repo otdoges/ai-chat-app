@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -33,8 +33,8 @@ interface Message {
   feedback?: string // Optional user feedback
 }
 
-// Helper function to detect and format code blocks
-function formatMessageContent(content: string) {
+// Memoized helper function to detect and format code blocks
+const FormatMessageContent = React.memo(({ content }: { content: string }) => {
   // Split the content by code block markers ```
   const parts = content.split(/(```[\w\s]*\n[\s\S]*?```)/g);
   
@@ -113,7 +113,136 @@ function formatMessageContent(content: string) {
       return <p key={`${index}-${i}`} className="mb-2">{paragraph}</p>;
     });
   });
-}
+});
+FormatMessageContent.displayName = "FormatMessageContent";
+
+// Memoized message component for performance
+const MessageCard = React.memo(({ 
+  msg, 
+  currentModel, 
+  ratings, 
+  handleRateMessage 
+}: {
+  msg: Message;
+  currentModel: string;
+  ratings: { [id: string]: { rating: number, feedback: string } };
+  handleRateMessage: (id: string, rating: number, feedback: string) => void;
+}) => {
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(msg.content);
+    toast.success("Message copied to clipboard");
+  }, [msg.content]);
+
+  const handleGithubReport = useCallback(() => {
+    window.open(
+      `https://github.com/username/ai-chat-app/issues/new?title=Issue+with+${currentModel}+response&body=${encodeURIComponent(
+        `## Model\n${currentModel}\n\n## Response\n${msg.content}\n\n## Description\nPlease describe the issue:\n\n`
+      )}`,
+      '_blank'
+    );
+    toast.success('Opening GitHub issue form');
+  }, [currentModel, msg.content]);
+
+  return (
+    <div className="mb-4">
+      <Card
+        className={cn(
+          "border shadow-sm transition-all duration-200 hover:shadow-md",
+          msg.role === "user" 
+            ? "border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-900/10" 
+            : "border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50"
+        )}
+      >
+        <CardContent className="p-3 md:p-4">
+          <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+            {msg.role === "agent" ? (
+              <div className="h-7 w-7 md:h-8 md:w-8 rounded-full bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center text-white flex-shrink-0">
+                <Bot className="h-4 w-4 md:h-5 md:w-5" />
+              </div>
+            ) : (
+              <div className="h-7 w-7 md:h-8 md:w-8 rounded-full bg-gradient-to-br from-blue-500 to-sky-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">You</div>
+            )}
+            <div>
+              <div className="text-sm font-medium">
+                {msg.role === "agent" ? "AI Assistant" : "You"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {msg.timestamp}
+              </div>
+            </div>
+          </div>
+          
+          <div className="text-sm break-words">
+            <FormatMessageContent content={msg.content} />
+          </div>
+          
+          {msg.role === "agent" && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                      onClick={handleGithubReport}
+                    >
+                      <Github className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>Report an issue with this response</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0" 
+                onClick={handleCopy}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0">
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0 text-green-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+              >
+                <ThumbsUp className="h-3.5 w-3.5" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                <ThumbsDown className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      {msg.role === "agent" && (
+        <div className="mt-2 flex flex-col gap-2">
+          <Rating
+            value={ratings[msg.id || 0]?.rating || msg.rating || 0}
+            onChange={val => handleRateMessage(msg.id || '0', val, ratings[msg.id || 0]?.feedback || msg.feedback || "")}
+          />
+          <Textarea
+            className="mt-1"
+            placeholder="Leave feedback (optional)"
+            value={ratings[msg.id || 0]?.feedback || msg.feedback || ""}
+            onChange={e => handleRateMessage(msg.id || '0', ratings[msg.id || 0]?.rating || msg.rating || 0, e.target.value)}
+            rows={2}
+          />
+        </div>
+      )}
+    </div>
+  );
+});
+MessageCard.displayName = "MessageCard";
 
 export default function ChatInterface() {
   const [input, setInput] = useState("")
@@ -123,6 +252,13 @@ export default function ChatInterface() {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const [isClient, setIsClient] = useState(false)
   const [ratings, setRatings] = useState<{ [id: string]: { rating: number, feedback: string } }>({});
+
+  // Memoized unique messages to prevent duplicates and improve performance
+  const uniqueMessages = useMemo(() => 
+    messages.filter((msg, index, arr) => 
+      index === arr.findIndex(m => m.id === msg.id || (m.content === msg.content && m.timestamp === msg.timestamp))
+    ), [messages]
+  );
 
   // Use useEffect to handle client-side only operations
   useEffect(() => {
@@ -176,8 +312,8 @@ export default function ChatInterface() {
     }
   }, [messages])
 
-  // Function to send a message to the AI model with streaming support
-  const sendMessage = async () => {
+  // Memoized message sending function
+  const sendMessage = useCallback(async () => {
     if (!input.trim()) return
     
     // Create new user message
@@ -373,18 +509,18 @@ export default function ChatInterface() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [input, messages, currentModel])
   
   // Handler for Enter key to send message
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
     }
-  }
+  }, [sendMessage])
 
   // Handle model change
-  const handleModelChange = (modelId: string) => {
+  const handleModelChange = useCallback((modelId: string) => {
     if (modelId === currentModel) return; // Don't switch if already on this model
     
     // Update model in service
@@ -395,10 +531,10 @@ export default function ChatInterface() {
     
     // Display a success message when model is changed
     toast.success(`Switched to ${availableModels.find(m => m.id === modelId)?.name || modelId} model`);
-  };
+  }, [currentModel])
   
   // Function to clear chat history for current model
-  const clearChatHistory = async () => {
+  const clearChatHistory = useCallback(async () => {
     try {
       // Clear from database
       await dbService.clearMessagesByModel(currentModel);
@@ -419,9 +555,9 @@ export default function ChatInterface() {
       console.error('Error clearing messages:', error);
       toast.error('Failed to clear chat history');
     }
-  };
+  }, [currentModel])
   
-  const handleRateMessage = async (id: string, rating: number, feedback: string = "") => {
+  const handleRateMessage = useCallback(async (id: string, rating: number, feedback: string = "") => {
     setRatings(prev => ({ ...prev, [id]: { rating, feedback } }));
     setMessages(prevMsgs => prevMsgs.map(msg =>
       msg.id === id ? { ...msg, rating, feedback } : msg
@@ -430,14 +566,16 @@ export default function ChatInterface() {
     if (id && typeof id === 'string' && id.startsWith('temp-id-') === false) {
       await dbService.updateMessageRating(id, rating, feedback);
     }
-  };
+  }, [])
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="p-4 border-b bg-white dark:bg-gray-950">
-        <div className="flex flex-col items-center max-w-3xl mx-auto">
-          <div className="flex items-center justify-center w-full mb-2">
-            <h1 className="text-lg font-bold md:text-xl">AI Chat Assistant</h1>
+    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800">
+      <div className="p-4 border-b bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm shadow-sm">
+        <div className="flex flex-col items-center max-w-4xl mx-auto">
+          <div className="flex items-center justify-center w-full mb-3">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
+              AI Chat Assistant
+            </h1>
           </div>
           <ModelSelector 
             onModelChange={handleModelChange}
@@ -445,35 +583,27 @@ export default function ChatInterface() {
           />
         </div>
         
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 md:gap-2">
-          <Badge variant="outline" className="px-2 py-0.5 md:px-3 md:py-1 bg-primary/10 border-primary/20 text-xs md:text-sm font-medium">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <Badge variant="outline" className="px-3 py-1 bg-primary/10 border-primary/20 text-sm font-medium">
             {availableModels.find(m => m.id === currentModel)?.name || currentModel}
           </Badge>
           
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex items-center gap-1 px-2 py-0.5 md:px-3 md:py-1 bg-muted rounded-full text-xs text-muted-foreground cursor-help truncate max-w-[180px] md:max-w-none">
+                <div className="flex items-center gap-1 px-3 py-1 bg-muted rounded-full text-xs text-muted-foreground cursor-help">
                   <Info className="h-3 w-3 flex-shrink-0" />
-                  <span className="truncate">{getSystemPromptDescription(currentModel)}</span>
+                  <span>{getSystemPromptDescription(currentModel)}</span>
                 </div>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[280px] md:max-w-sm">
+              <TooltipContent className="max-w-sm">
                 <p>This model is optimized with a specific system prompt for better performance.</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          
-          <div className="w-full text-center text-xs text-muted-foreground mt-1 md:mt-2">
-            <span className="font-medium">Model ID:</span> {currentModel}
-          </div>
         </div>
         
-        <div className="mt-2 flex flex-col gap-2 items-center">
-          <div className="text-xs text-muted-foreground text-center">
-            All models are from the <a href="https://github.com/marketplace/models/" target="_blank" rel="noopener noreferrer" className="underline text-primary hover:text-primary/80 transition-colors">GitHub Marketplace</a>
-          </div>
-          
+        <div className="mt-3 flex justify-center">
           <Button 
             variant="outline" 
             size="sm"
@@ -481,138 +611,37 @@ export default function ChatInterface() {
             className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/10 flex items-center gap-1.5 border-red-200 dark:border-red-900/30"
           >
             <Trash2 className="h-3 w-3" />
-            <span className="md:inline">Clear Chat History</span>
+            <span>Clear Chat History</span>
           </Button>
         </div>
       </div>
-      <ScrollArea className="flex-1 px-2 md:px-4 py-4 md:py-6" ref={scrollAreaRef}>
-        <div className="space-y-4 md:space-y-6 max-w-3xl mx-auto">
-          {isClient && messages.map((msg, i) => (
-            <div key={msg.id || i} className="mb-4">
-              <Card
-                className={cn(
-                  "border shadow-sm",
-                  msg.role === "user" 
-                    ? "border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-900/10" 
-                    : "border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50"
-                )}
-              >
-                <CardContent className="p-3 md:p-4">
-                  <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
-                    {msg.role === "agent" ? (
-                      <div className="h-7 w-7 md:h-8 md:w-8 rounded-full bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center text-white flex-shrink-0">
-                        <Bot className="h-4 w-4 md:h-5 md:w-5" />
-                      </div>
-                    ) : (
-                      <div className="h-7 w-7 md:h-8 md:w-8 rounded-full bg-gradient-to-br from-blue-500 to-sky-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">You</div>
-                    )}
-                    <div>
-                      <div className="text-sm font-medium">
-                        {msg.role === "agent" ? "AI Assistant" : "You"}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {msg.timestamp}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-sm break-words">
-                    {formatMessageContent(msg.content)}
-                  </div>
-                  
-                  {msg.role === "agent" && (
-                    <div className="flex items-center gap-1.5 mt-2">
-                      {/* Add a button to report issues to GitHub */}
-                      {msg.role === "agent" && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                                onClick={() => {
-                                  window.open(
-                                    `https://github.com/username/ai-chat-app/issues/new?title=Issue+with+${currentModel}+response&body=${encodeURIComponent(
-                                      `## Model\n${currentModel}\n\n## Response\n${msg.content}\n\n## Description\nPlease describe the issue:\n\n`
-                                    )}`,
-                                    '_blank'
-                                  )
-                                  toast.success('Opening GitHub issue form')
-                                }}
-                              >
-                                <Github className="h-3.5 w-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              <p>Report an issue with this response</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0" 
-                        onClick={() => {
-                          navigator.clipboard.writeText(msg.content);
-                          toast.success("Message copied to clipboard");
-                        }}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0">
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0 text-green-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
-                      >
-                        <ThumbsUp className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-7 w-7 md:h-8 md:w-8 rounded-full p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                        <ThumbsDown className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              {msg.role === "agent" && (
-                <div className="mt-2 flex flex-col gap-2">
-                  <Rating
-                    value={ratings[msg.id || i]?.rating || msg.rating || 0}
-                    onChange={val => handleRateMessage(msg.id || i.toString(), val, ratings[msg.id || i]?.feedback || msg.feedback || "")}
-                  />
-                  <Textarea
-                    className="mt-1"
-                    placeholder="Leave feedback (optional)"
-                    value={ratings[msg.id || i]?.feedback || msg.feedback || ""}
-                    onChange={e => handleRateMessage(msg.id || i.toString(), ratings[msg.id || i]?.rating || msg.rating || 0, e.target.value)}
-                    rows={2}
-                  />
-                </div>
-              )}
-            </div>
+      
+      <ScrollArea className="flex-1 px-4 py-6" ref={scrollAreaRef}>
+        <div className="space-y-4 max-w-4xl mx-auto">
+          {isClient && uniqueMessages.map((msg, i) => (
+            <MessageCard
+              key={msg.id || i}
+              msg={msg}
+              currentModel={currentModel}
+              ratings={ratings}
+              handleRateMessage={handleRateMessage}
+            />
           ))}
         </div>
       </ScrollArea>
-      <div className="p-2 md:p-4 border-t bg-white dark:bg-gray-950 shadow-[0_-1px_3px_rgba(0,0,0,0.05)]">
-        <div className="flex gap-1 md:gap-2 max-w-3xl mx-auto">
+      
+      <div className="p-4 border-t bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm shadow-sm">
+        <div className="flex gap-2 max-w-4xl mx-auto">
           <Textarea
             placeholder="Type your message here..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="min-h-[48px] md:min-h-[54px] max-h-32 md:max-h-40 border-gray-300 dark:border-gray-700 focus:border-primary dark:focus:border-primary resize-none shadow-sm text-sm md:text-base"
+            className="min-h-[60px] max-h-40 border-gray-300 dark:border-gray-700 focus:border-primary dark:focus:border-primary resize-none shadow-sm transition-all"
             disabled={isLoading}
           />
           <Button 
-            className="px-3 md:px-4 h-[48px] md:h-[54px] gap-1 md:gap-2 flex-shrink-0" 
+            className="px-4 h-[60px] gap-2 flex-shrink-0 shadow-sm hover:shadow-md transition-all duration-200" 
             onClick={sendMessage} 
             disabled={isLoading || !input.trim()}
           >
@@ -621,12 +650,12 @@ export default function ChatInterface() {
             ) : (
               <>
                 <Send className="h-4 w-4" />
-                <span className="hidden md:inline">Send</span>
+                <span className="hidden sm:inline">Send</span>
               </>
             )}
           </Button>
         </div>
-        <div className="text-xs text-center text-muted-foreground mt-1 md:mt-2">
+        <div className="text-xs text-center text-muted-foreground mt-2">
           Press Enter to send, Shift+Enter for new line
         </div>
       </div>
