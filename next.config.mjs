@@ -9,15 +9,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Performance optimizations
-  experimental: {
-    optimizePackageImports: [
-      'lucide-react', 
-      '@radix-ui/react-scroll-area',
-      '@radix-ui/react-popover',
-      'react-syntax-highlighter'
-    ],
-  },
   // Webpack optimizations
   webpack: (config, { dev, isServer }) => {
     // Production optimizations
