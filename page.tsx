@@ -1,10 +1,5 @@
-import Layout from "./layout"
-import ChatInterface from "./chat-interface"
+import { redirect } from 'next/navigation'
 
 export default function Page() {
-  return (
-    <Layout>
-      <ChatInterface />
-    </Layout>
-  )
+  redirect('/chat')
 }

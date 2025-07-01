@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo, memo, lazy, Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Copy, Download, ThumbsUp, ThumbsDown, Loader2, Info, Code as CodeIcon, Send, Trash2, ArrowLeft, PlusCircle, MoreVertical } from 'lucide-react'
+import { Copy, Download, ThumbsUp, ThumbsDown, Loader2, Info, Code as CodeIcon, Send, Trash2, ArrowLeft, PlusCircle, MoreVertical, Bot, User } from 'lucide-react'
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import dbService from "@/lib/services/db"
@@ -24,6 +24,19 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Rating } from "@/components/ui/rating"
 
+// Lazy load the syntax highlighter for better initial load performance
+const SyntaxHighlighter = lazy(() => 
+  import('react-syntax-highlighter').then(module => ({
+    default: module.Prism
+  }))
+)
+
+const codeTheme = lazy(() => 
+  import('react-syntax-highlighter/dist/esm/styles/prism').then(module => ({
+    default: module.oneDark
+  }))
+)
+
 interface Message {
   id: string;
   role: "agent" | "user";
@@ -41,410 +54,584 @@ interface ChatSession {
   messages: Message[];
 }
 
-// Helper function to detect and format code blocks with enhanced syntax highlighting
-function formatMessageContent(content: string) {
-  // Split the content by code block markers ```
-  const parts = content.split(/(```[\w\s]*\n[\s\S]*?```)/g);
+// Memoized code block component for better performance
+const CodeBlock = memo(({ language, code, index }: { language: string; code: string; index: number }) => {
+  const [theme, setTheme] = useState<any>(null);
   
-  return parts.map((part, index) => {
-    // Check if this part is a code block
-    if (part.startsWith('```')) {
-      // Extract the language (if specified) and the code content
-      const match = part.match(/```([\w\s]*)\n([\s\S]*?)```/);
-      if (match) {
-        const [_, language, code] = match;
-        // Determine language for syntax highlighting
-        const lang = language.trim().toLowerCase() || 'text';
-        return (
-          <div key={index} className="relative my-2 rounded-md overflow-hidden border border-border">
-            <div className="flex items-center justify-between bg-muted px-4 py-1.5 text-xs font-medium text-muted-foreground">
-              <span>{lang || 'code'}</span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-6 w-6 rounded-sm p-0 hover:bg-muted-foreground/10"
-                      onClick={() => {
-                        navigator.clipboard.writeText(code);
-                        toast.success('Code copied to clipboard');
-                      }}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      <span className="sr-only">Copy code</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Copy code</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <SyntaxHighlighter
-              language={lang}
-              style={oneDark}
-              customStyle={{ margin: 0, borderRadius: 0 }}
-              showLineNumbers={true}
-            >
-              {code}
-            </SyntaxHighlighter>
-          </div>
-        );
-      }
-    }
-    
-    // Handle normal text with improved markdown-like formatting
+  useEffect(() => {
+    codeTheme().then(({ default: oneDark }) => setTheme(oneDark));
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(code);
+    toast.success('Code copied to clipboard');
+  }, [code]);
+
+  if (!theme) {
     return (
-      <div key={index} className="prose prose-neutral dark:prose-invert max-w-none">
-        {part.split('\n').map((line, i) => {
-          // Bold text
-          line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-          // Italic text
-          line = line.replace(/\*(.*?)\*/g, '<em>$1</em>');
-          // Links
-          line = line.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">$1</a>');
-          
-          return <p key={i} dangerouslySetInnerHTML={{ __html: line }} />;
-        })}
+      <div className="relative my-2 rounded-lg overflow-hidden border border-gray-700 bg-gray-900">
+        <div className="flex items-center justify-between bg-gray-800 px-4 py-2 text-xs font-medium text-gray-300">
+          <span>{language || 'code'}</span>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={handleCopy}
+            className="h-6 w-6 p-0 hover:bg-gray-700"
+          >
+            <Copy className="h-3 w-3" />
+          </Button>
+        </div>
+        <div className="p-4 font-mono text-sm text-gray-200 whitespace-pre-wrap">
+          {code}
+        </div>
       </div>
     );
-  });
-}
+  }
 
-// Helper function to create a new message with id
+  return (
+    <div className="relative my-2 rounded-lg overflow-hidden border border-gray-700">
+      <div className="flex items-center justify-between bg-gray-800 px-4 py-2 text-xs font-medium text-gray-300">
+        <span>{language || 'code'}</span>
+        <Button 
+          variant="ghost" 
+          size="sm"
+          onClick={handleCopy}
+          className="h-6 w-6 p-0 hover:bg-gray-700"
+        >
+          <Copy className="h-3 w-3" />
+        </Button>
+      </div>
+      <Suspense fallback={
+        <div className="p-4 font-mono text-sm text-gray-200 whitespace-pre-wrap">
+          {code}
+        </div>
+      }>
+        <SyntaxHighlighter
+          language={language.toLowerCase()}
+          style={theme}
+          customStyle={{ margin: 0, borderRadius: 0, background: 'transparent' }}
+          className="text-sm"
+        >
+          {code}
+        </SyntaxHighlighter>
+      </Suspense>
+    </div>
+  );
+});
+
+CodeBlock.displayName = 'CodeBlock';
+
+// Optimized message content formatter with better performance
+const formatMessageContent = memo(({ content }: { content: string }) => {
+  const parts = useMemo(() => {
+    return content.split(/(```[\w\s]*\n[\s\S]*?```)/g);
+  }, [content]);
+
+  return (
+    <div className="space-y-2">
+      {parts.map((part, index) => {
+        if (part.startsWith('```')) {
+          const match = part.match(/```([\w\s]*)\n([\s\S]*?)```/);
+          if (match) {
+            const [_, language, code] = match;
+            return <CodeBlock key={index} language={language.trim()} code={code} index={index} />;
+          }
+        }
+        
+        // Process inline code and text formatting
+        const processedText = part
+          .split(/(`[^`]+`)/g)
+          .map((segment, i) => {
+            if (segment.startsWith('`') && segment.endsWith('`')) {
+              return (
+                <code key={i} className="px-1.5 py-0.5 mx-0.5 bg-gray-800 rounded text-sm font-mono text-blue-300">
+                  {segment.slice(1, -1)}
+                </code>
+              );
+            }
+            return segment;
+          });
+
+        return (
+          <div key={index} className="text-sm leading-relaxed">
+            {processedText}
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+formatMessageContent.displayName = 'MessageContent';
+
+// Memoized message component for better performance
+const MessageBubble = memo(({ message, isUser }: { message: Message; isUser: boolean }) => {
+  return (
+    <div className={cn(
+      "flex gap-3 mb-6 group",
+      isUser ? "justify-end" : "justify-start"
+    )}>
+      {!isUser && (
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+          <Bot className="w-4 h-4 text-white" />
+        </div>
+      )}
+      
+      <div className={cn(
+        "rounded-2xl px-4 py-3 max-w-[85%] md:max-w-[75%]",
+        isUser 
+          ? "bg-blue-600 text-white ml-auto" 
+          : "bg-gray-800 text-gray-100"
+      )}>
+        <formatMessageContent content={message.content} />
+        <div className="text-xs opacity-70 mt-2">
+          {message.timestamp}
+        </div>
+      </div>
+      
+      {isUser && (
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-green-500 to-blue-500 flex items-center justify-center">
+          <User className="w-4 h-4 text-white" />
+        </div>
+      )}
+    </div>
+  );
+});
+
+MessageBubble.displayName = 'MessageBubble';
+
+// Optimized chat sidebar
+const ChatSidebar = memo(({ 
+  chatSessions, 
+  activeChatId, 
+  onSelectChat, 
+  onNewChat, 
+  onDeleteChat,
+  showMenu,
+  setShowMenu 
+}: {
+  chatSessions: ChatSession[];
+  activeChatId: string | null;
+  onSelectChat: (id: string) => void;
+  onNewChat: () => void;
+  onDeleteChat: (id: string) => void;
+  showMenu: string | null;
+  setShowMenu: (id: string | null) => void;
+}) => {
+  return (
+    <aside className="w-64 bg-gray-900 border-r border-gray-800 flex-col hidden md:flex">
+      <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+        <h2 className="font-semibold text-white">Conversations</h2>
+        <Button 
+          onClick={onNewChat} 
+          variant="ghost" 
+          size="sm"
+          className="text-gray-400 hover:text-white hover:bg-gray-800"
+        >
+          <PlusCircle className="h-4 w-4" />
+        </Button>
+      </div>
+      
+      <ScrollArea className="flex-1">
+        <div className="p-2">
+          {chatSessions.map((session) => (
+            <div key={session.id} className="group relative">
+              <button
+                className={cn(
+                  "w-full text-left p-3 rounded-lg transition-colors mb-1",
+                  activeChatId === session.id 
+                    ? "bg-gray-800 text-white" 
+                    : "text-gray-400 hover:bg-gray-800/50 hover:text-white"
+                )}
+                onClick={() => onSelectChat(session.id)}
+              >
+                <div className="truncate font-medium text-sm">{session.title}</div>
+                <div className="text-xs text-gray-500 truncate">
+                  {new Date(session.createdAt).toLocaleDateString()}
+                </div>
+              </button>
+              
+              <button
+                className="absolute right-2 top-3 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(session.id);
+                }}
+              >
+                <MoreVertical className="h-4 w-4 text-gray-500 hover:text-white" />
+              </button>
+              
+              {showMenu === session.id && (
+                <div className="absolute right-0 top-10 z-20 w-36 bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1">
+                  <button
+                    className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-gray-700"
+                    onClick={() => onDeleteChat(session.id)}
+                  >
+                    <Trash2 className="h-3 w-3 inline mr-2" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </aside>
+  );
+});
+
+ChatSidebar.displayName = 'ChatSidebar';
+
+// Helper function to create a new message
 const createMessage = (role: "agent" | "user", content: string, modelId?: string): Message => ({
-  id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  id: crypto.randomUUID(),
   role,
   content,
   timestamp: new Date().toLocaleTimeString(),
   modelId,
 });
 
-// Enhanced ChatInterface with MCP capabilities
+// Main optimized chat component
 export default function ChatPage() {
-  // Chat session state
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [currentModel, setCurrentModel] = useState(aiService.getCurrentModel());
   const [isLoading, setIsLoading] = useState(false);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [isClient, setIsClient] = useState(false);
-  const [ratings, setRatings] = useState<{ [id: string]: { rating: number, feedback: string } }>({});
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showMenu, setShowMenu] = useState<string | null>(null);
+  
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load chat history from dbService (IndexedDB) on mount
+  // Initialize chat sessions
   useEffect(() => {
-    setIsClient(true);
-    const loadChats = async () => {
-      const sessions = await dbService.getAllChats?.(); // Assume dbService supports this
-      if (sessions && sessions.length > 0) {
-        setChatSessions(sessions);
-        setActiveChatId(sessions[0].id);
-      } else {
-        // Create a new chat if none exists
+    const initializeChats = async () => {
+      try {
+        const sessions = await dbService.getAllChats?.() || [];
+        if (sessions.length > 0) {
+          setChatSessions(sessions);
+          setActiveChatId(sessions[0].id);
+        } else {
+          handleNewChat();
+        }
+      } catch (error) {
+        console.error('Error loading chats:', error);
         handleNewChat();
       }
     };
-    loadChats();
+    
+    initializeChats();
   }, []);
 
-  // Get messages for the active chat
-  const activeSession = chatSessions.find(cs => cs.id === activeChatId);
-  const messages = activeSession?.messages || [];
-
-  // New Chat handler
-  const handleNewChat = async () => {
-    const newSession: ChatSession = {
-      id: `${Date.now()}`,
-      title: `Chat ${chatSessions.length + 1}`,
-      createdAt: new Date().toISOString(),
-      messages: [createMessage("agent", "Welcome! Start your conversation.")],
-    };
-    setChatSessions([newSession, ...chatSessions]);
-    setActiveChatId(newSession.id);
-    setInput("");
-    textareaRef.current?.focus();
-    // Optionally persist to dbService
-    dbService.addChat?.(newSession);
-  };
-
-  // Switch chat handler
-  const handleSelectChat = (id: string) => {
-    setActiveChatId(id);
-  };
-
-  // Function to send a message to the AI model with MCP enhancements
-  const sendMessage = async () => {
-    if (!input.trim() || !activeChatId) return;
-    const userMessage = createMessage("user", input, currentModel);
-    const currentSession = chatSessions.find(cs => cs.id === activeChatId);
-    const messagesForApi = currentSession ? [...currentSession.messages, userMessage] : [userMessage];
-    setInput("");
-    textareaRef.current?.focus();
-    setIsLoading(true);
-    try {
-      // POST to backend with correct URL: /api/chat not /api/chat/route.ts
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: messagesForApi,
-          modelId: currentModel,
-        }),
-      });
-      if (!response.ok) throw new Error("Failed to send message to backend");
-      const data = await response.json();
-      const aiMessage = createMessage("agent", data.message.content, currentModel);
-      setChatSessions((prev: ChatSession[]) => {
-        const updatedSessions = [...prev];
-        const activeSessionIndex = updatedSessions.findIndex(cs => cs.id === activeChatId);
-        if (activeSessionIndex !== -1) {
-          // Only add if not already present
-          const ids = new Set(updatedSessions[activeSessionIndex].messages.map(m => m.id));
-          if (!ids.has(userMessage.id)) {
-            updatedSessions[activeSessionIndex].messages.push(userMessage);
-          }
-          if (!ids.has(aiMessage.id)) {
-            updatedSessions[activeSessionIndex].messages.push(aiMessage);
-          }
-        }
-        return updatedSessions;
-      });
-      // Persist updated session
-      const updatedSession = chatSessions.find(cs => cs.id === activeChatId);
-      if (updatedSession) await dbService.addChat(updatedSession);
-    } catch (error) {
-      toast.error("Failed to send message. Please try again.");
-      console.error(error);
-    } finally {
-      setIsLoading(false);
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    const scrollElement = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (scrollElement) {
+      scrollElement.scrollTop = scrollElement.scrollHeight;
     }
-  };
-
-  // Handler for Enter key to send message
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-  }
-
-  // Handle model change
-  const handleModelChange = (modelId: string) => {
-    if (modelId === currentModel) return; // Don't switch if already on this model
-    
-    // Update model in service
-    aiService.setModel(modelId);
-    
-    // Update current model state - this will trigger the useEffect to load model-specific messages
-    setCurrentModel(modelId);
-    
-    // Display a success message when model is changed
-    toast.success(`Switched to ${availableModels.find(m => m.id === modelId)?.name || modelId} model`);
-  };
-  
-  // Function to clear chat history for current model
-  const clearChatHistory = async () => {
-    try {
-      // Clear from database
-      await dbService.clearMessagesByModel(activeChatId!);
-      
-      // Create new welcome message
-      const welcomeMessage = createMessage("agent", `Chat history cleared. I am using the ${availableModels.find(m => m.id === currentModel)?.name || currentModel} model. How may I assist you today?`, currentModel);
-      
-      // Reset messages to just the welcome message
-      setChatSessions((prev: ChatSession[]) => {
-        const updatedSessions = [...prev];
-        const activeSessionIndex = updatedSessions.findIndex(cs => cs.id === activeChatId);
-        if (activeSessionIndex !== -1) {
-          updatedSessions[activeSessionIndex].messages = [welcomeMessage];
-        }
-        return updatedSessions;
-      });
-      
-      toast.success("Chat history cleared");
-    } catch (error) {
-      console.error('Error clearing messages:', error);
-      toast.error('Failed to clear chat history');
-    }
-  };
-  
-  // Function to handle message rating
-  const handleRateMessage = async (messageId: string, rating: number) => {
-    try {
-      // Store rating in state
-      setRatings(prev => ({
-        ...prev,
-        [messageId]: { ...prev[messageId], rating }
-      }));
-      
-      // Update in database
-      await dbService.updateMessageRating(messageId, rating);
-      
-      // Show success message
-      toast.success('Thank you for your feedback!');
-    } catch (error) {
-      console.error('Error rating message:', error);
-      toast.error('Failed to save rating');
-    }
-  };
-  
-  // Function to handle feedback submission
-  const handleSubmitFeedback = async (messageId: string, feedback: string) => {
-    try {
-      // Store feedback in state
-      setRatings(prev => ({
-        ...prev,
-        [messageId]: { ...prev[messageId], feedback }
-      }));
-      
-      // Update in database (reusing the rating if it exists)
-      const rating = ratings[messageId]?.rating || 0;
-      await dbService.updateMessageRating(messageId, rating, feedback);
-      
-      // Show success message
-      toast.success('Thank you for your feedback!');
-    } catch (error) {
-      console.error('Error saving feedback:', error);
-      toast.error('Failed to save feedback');
-    }
-  };
-
-  // Add handler for deleting a chat
-  const handleDeleteChat = (id: string) => {
-    setChatSessions(prev => prev.filter(cs => cs.id !== id));
-    if (activeChatId === id) {
-      // Switch to another chat if deleting the active one
-      const next = chatSessions.find(cs => cs.id !== id);
-      setActiveChatId(next?.id || null);
-    }
-    setShowMenu(null);
-    dbService.deleteChat?.(id);
-  };
+  }, [chatSessions, activeChatId]);
 
   // Close menu on outside click
   useEffect(() => {
     const closeMenu = () => setShowMenu(null);
-    window.addEventListener('click', closeMenu);
-    return () => window.removeEventListener('click', closeMenu);
+    document.addEventListener('click', closeMenu);
+    return () => document.removeEventListener('click', closeMenu);
   }, []);
 
+  // Get active session and messages
+  const activeSession = useMemo(() => 
+    chatSessions.find(cs => cs.id === activeChatId), 
+    [chatSessions, activeChatId]
+  );
+  
+  const messages = useMemo(() => 
+    activeSession?.messages || [], 
+    [activeSession]
+  );
+
+  // Create new chat handler
+  const handleNewChat = useCallback(async () => {
+    const newSession: ChatSession = {
+      id: Date.now().toString(),
+      title: `Chat ${chatSessions.length + 1}`,
+      createdAt: new Date().toISOString(),
+      messages: [createMessage("agent", "Hello! How can I help you today?")],
+    };
+    
+    setChatSessions(prev => [newSession, ...prev]);
+    setActiveChatId(newSession.id);
+    setInput("");
+    
+    // Persist to IndexedDB
+    try {
+      await dbService.addChat?.(newSession);
+    } catch (error) {
+      console.error('Error saving chat:', error);
+    }
+  }, [chatSessions.length]);
+
+  // Select chat handler
+  const handleSelectChat = useCallback((id: string) => {
+    setActiveChatId(id);
+  }, []);
+
+  // Delete chat handler
+  const handleDeleteChat = useCallback(async (id: string) => {
+    setChatSessions(prev => prev.filter(cs => cs.id !== id));
+    
+    if (activeChatId === id) {
+      const remaining = chatSessions.filter(cs => cs.id !== id);
+      setActiveChatId(remaining[0]?.id || null);
+      if (remaining.length === 0) {
+        handleNewChat();
+      }
+    }
+    
+    setShowMenu(null);
+    
+    try {
+      await dbService.deleteChat?.(id);
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+    }
+  }, [activeChatId, chatSessions, handleNewChat]);
+
+  // Model change handler
+  const handleModelChange = useCallback((modelId: string) => {
+    if (modelId === currentModel) return;
+    
+    aiService.setModel(modelId);
+    setCurrentModel(modelId);
+    
+    const modelName = availableModels.find(m => m.id === modelId)?.name || modelId;
+    toast.success(`Switched to ${modelName}`);
+  }, [currentModel]);
+
+  // Optimized send message with streaming support
+  const sendMessage = useCallback(async () => {
+    if (!input.trim() || !activeChatId || isLoading) return;
+    
+    const userMessage = createMessage("user", input, currentModel);
+    setInput("");
+    setIsLoading(true);
+    
+    // Optimistically update UI
+    setChatSessions(prev => prev.map(session => 
+      session.id === activeChatId 
+        ? { ...session, messages: [...session.messages, userMessage] }
+        : session
+    ));
+    
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream"
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+          modelId: currentModel,
+          stream: true
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const aiMessage = createMessage("agent", "", currentModel);
+      let accumulatedContent = "";
+
+      // Add placeholder message for streaming
+      setChatSessions(prev => prev.map(session => 
+        session.id === activeChatId 
+          ? { ...session, messages: [...session.messages, aiMessage] }
+          : session
+      ));
+
+      if (response.headers.get('Content-Type')?.includes('text/event-stream')) {
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (reader) {
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n').filter(line => line.trim());
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const content = line.substring(6);
+                    if (content === '[DONE]') continue;
+
+                    const data = JSON.parse(content);
+                    const token = data.token || '';
+
+                    if (token) {
+                      accumulatedContent += token;
+                      
+                      // Update streaming message
+                      setChatSessions(prev => prev.map(session => 
+                        session.id === activeChatId 
+                          ? {
+                              ...session,
+                              messages: session.messages.map(msg => 
+                                msg.id === aiMessage.id 
+                                  ? { ...msg, content: accumulatedContent }
+                                  : msg
+                              )
+                            }
+                          : session
+                      ));
+                    }
+                  } catch (e) {
+                    console.error('Error parsing stream chunk:', e);
+                  }
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        }
+      } else {
+        // Fallback for non-streaming
+        const data = await response.json();
+        accumulatedContent = data.message.content;
+        
+        setChatSessions(prev => prev.map(session => 
+          session.id === activeChatId 
+            ? {
+                ...session,
+                messages: session.messages.map(msg => 
+                  msg.id === aiMessage.id 
+                    ? { ...msg, content: accumulatedContent }
+                    : msg
+                )
+              }
+            : session
+        ));
+      }
+
+      // Persist updated session
+      const updatedSession = chatSessions.find(cs => cs.id === activeChatId);
+      if (updatedSession) {
+        await dbService.addChat?.(updatedSession);
+      }
+
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast.error('Failed to send message. Please try again.');
+      
+      // Remove the user message on error
+      setChatSessions(prev => prev.map(session => 
+        session.id === activeChatId 
+          ? { ...session, messages: session.messages.filter(msg => msg.id !== userMessage.id) }
+          : session
+      ));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [input, activeChatId, isLoading, currentModel, messages, chatSessions]);
+
+  // Handle Enter key
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }, [sendMessage]);
+
   return (
-    <div className="flex h-screen bg-[#111111]">
-      {/* Sidebar for chat history */}
-      <aside className="w-64 bg-[#141414] border-r border-[#1A1A1A] flex-col hidden md:flex">
-        <div className="p-4 border-b flex items-center justify-between">
-          <div className="font-bold text-lg">Chat History</div>
-          <Button onClick={handleNewChat} variant="ghost" size="icon" title="New Chat">
-            <PlusCircle className="h-5 w-5" />
-          </Button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {chatSessions.map((session) => (
-            <div key={session.id} className="group flex items-center justify-between hover:bg-muted transition px-4 py-3">
-              <button
-                className={`flex-1 text-left truncate ${activeChatId === session.id ? 'font-semibold' : ''}`}
-                onClick={() => handleSelectChat(session.id)}
-              >
-                <div className="truncate">{session.title}</div>
-                <div className="text-xs text-muted-foreground truncate">{new Date(session.createdAt).toLocaleString()}</div>
-              </button>
-              <div className="relative flex items-center ml-2">
-                <button
-                  className="opacity-0 group-hover:opacity-100 transition"
-                  onClick={() => setShowMenu(session.id)}
-                  aria-label="Chat options"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </button>
-                {showMenu === session.id && (
-                  <div className="absolute right-0 mt-2 z-20 w-32 bg-popover border rounded shadow-lg">
-                    <button
-                      className="flex items-center w-full px-3 py-2 text-sm hover:bg-muted text-red-600"
-                      onClick={() => handleDeleteChat(session.id)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />Delete Chat
-                    </button>
-                    <button
-                      className="flex items-center w-full px-3 py-2 text-sm hover:bg-muted text-red-500"
-                      onClick={() => clearChatHistory()}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />Clear Messages
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </aside>
-      {/* Main chat area */}
-      <div className="flex flex-1 flex-col bg-[#111111]">
-        {/* Top bar with Model selector */}
-        <header className="flex items-center justify-between border-b border-[#1A1A1A] px-6 py-4 bg-[#141414]">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white">Select a model</h1>
+    <div className="flex h-screen bg-gray-950">
+      <ChatSidebar
+        chatSessions={chatSessions}
+        activeChatId={activeChatId}
+        onSelectChat={handleSelectChat}
+        onNewChat={handleNewChat}
+        onDeleteChat={handleDeleteChat}
+        showMenu={showMenu}
+        setShowMenu={setShowMenu}
+      />
+      
+      <div className="flex flex-1 flex-col">
+        {/* Header */}
+        <header className="flex items-center justify-between border-b border-gray-800 px-6 py-4 bg-gray-900">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold text-white">AI Chat</h1>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleNewChat}
+              className="md:hidden text-gray-400 hover:text-white"
+            >
+              <PlusCircle className="h-4 w-4" />
+            </Button>
           </div>
-          <div className="flex items-center gap-2">
-            <ModelSelector onModelChange={handleModelChange} currentModel={currentModel} />
-          </div>
+          
+          <ModelSelector 
+            onModelChange={handleModelChange} 
+            currentModel={currentModel} 
+          />
         </header>
-        {/* Main chat area */}
-        <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full" ref={scrollAreaRef}>
-            <div className="flex flex-col p-6 pb-20">
-              {[...new Map(messages.map(msg => [msg.id, msg])).values()].map((message, index) => {
-                return message.role === "user" ? (
-                  <div key={message.id} className="flex items-start mb-6">
-                    <div className="flex-shrink-0 mr-4">
-                      <div className="w-[80px] h-[80px] bg-[#6D5DFC] rounded-full flex items-center justify-center">
-                        <div className="w-[60px] h-[60px] bg-[#141414] rounded-full" />
-                      </div>
-                    </div>
-                    <div className="bg-[#141414] rounded-xl py-4 px-5 max-w-3xl">
-                      <div className="text-[#9e9e9e]">
-                        {formatMessageContent(message.content)}
-                      </div>
-                    </div>
+
+        {/* Messages */}
+        <ScrollArea className="flex-1" ref={scrollAreaRef}>
+          <div className="p-6 space-y-1">
+            {messages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                isUser={message.role === "user"}
+              />
+            ))}
+            
+            {isLoading && (
+              <div className="flex gap-3 mb-6">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-white" />
+                </div>
+                <div className="bg-gray-800 rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Thinking...</span>
                   </div>
-                ) : (
-                  <div key={message.id} className="mb-6 ml-20 mr-4">
-                    <div className="bg-[#6D5DFC] rounded-xl py-4 px-5 max-w-3xl">
-                      <div className="text-white">
-                        {formatMessageContent(message.content)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
-        </div>
-        {/* Input area */}
-        <div className="p-4 mt-auto">
-          <div className="mx-auto flex max-w-4xl items-center gap-2">
+                </div>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        {/* Input */}
+        <div className="border-t border-gray-800 p-4 bg-gray-900">
+          <div className="flex gap-3 items-end max-w-4xl mx-auto">
             <div className="flex-1 relative">
               <Textarea
                 ref={textareaRef}
-                placeholder="Text a message"
+                placeholder="Type your message..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="min-h-[60px] resize-none bg-[#141414] border-0 text-[#6D6D6D] rounded-lg px-6 py-4"
+                className="min-h-[60px] max-h-[200px] resize-none bg-gray-800 border-gray-700 text-white placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500"
                 disabled={isLoading}
               />
-              <Button 
-                onClick={sendMessage} 
-                disabled={isLoading || !input.trim()}
-                className="absolute right-3 bottom-3 h-8 w-8 p-0 bg-transparent hover:bg-transparent text-[#6D5DFC]"
-              >
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                <span className="sr-only">Send message</span>
-              </Button>
             </div>
+            <Button 
+              onClick={sendMessage} 
+              disabled={isLoading || !input.trim()}
+              className="h-[60px] px-6 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         </div>
       </div>
