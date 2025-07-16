@@ -11,6 +11,7 @@ interface ChatMessage {
   modelId?: string; // Track which model this message belongs to
   rating?: number; // Add rating property
   feedback?: string; // Add feedback property
+  reasoning?: string; // Reasoning content for models that support it
 }
 
 interface ChatSession {

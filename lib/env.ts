@@ -27,6 +27,9 @@ const env = {
   // Gemini API
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
   GEMINI_API_URL: 'https://generativelanguage.googleapis.com/v1beta/models',
+  
+  // Groq API
+  GROQ_API_KEY: process.env.GROQ_API_KEY || '',
 };
 
 export default env;

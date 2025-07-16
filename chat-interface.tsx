@@ -4,13 +4,15 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Copy, Download, ThumbsUp, ThumbsDown, Loader2, Info, Code as CodeIcon, Send, Trash2, MessageSquare, Bot, Github } from 'lucide-react'
+import { Copy, Download, ThumbsUp, ThumbsDown, Loader2, Info, Code as CodeIcon, Send, Trash2, MessageSquare, Bot, Github, Brain, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import dbService from "@/lib/services/db"
 import { ModelSelector } from "@/components/model-selector"
 import aiService, { availableModels } from "@/lib/services/aiService"
-import { getSystemPromptDescription } from "@/lib/systemPrompt"
+import { getSystemPromptDescription, hasCustomSystemPrompt } from "@/lib/systemPrompt"
+import CustomSystemPrompt from "@/components/custom-system-prompt"
 import {
   Tooltip,
   TooltipContent,
@@ -31,6 +33,7 @@ interface Message {
   modelId?: string // Track which model created this message
   rating?: number // 1-5 star rating
   feedback?: string // Optional user feedback
+  reasoning?: string // Reasoning content for models that support it
 }
 
 // Memoized helper function to detect and format code blocks
@@ -116,6 +119,51 @@ const FormatMessageContent = React.memo(({ content }: { content: string }) => {
 });
 FormatMessageContent.displayName = "FormatMessageContent";
 
+// Reasoning display component
+const ReasoningDisplay = React.memo(({ reasoning }: { reasoning: string }) => {
+  const [isOpen, setIsOpen] = useState(false)
+  
+  if (!reasoning?.trim()) return null
+  
+  return (
+    <div className="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full justify-between hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300"
+          >
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4" />
+              <span className="font-medium">View Reasoning Process</span>
+            </div>
+            {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2">
+          <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700">
+            <div className="flex items-center gap-2 mb-2">
+              <Brain className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                Model Reasoning
+              </span>
+            </div>
+            <div className="text-sm text-purple-800 dark:text-purple-200 space-y-2">
+              {reasoning.split('\n---\n').map((section, index) => (
+                <div key={index} className="whitespace-pre-wrap">
+                  {section.trim()}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  )
+})
+ReasoningDisplay.displayName = "ReasoningDisplay";
+
 // Memoized message component for performance
 const MessageCard = React.memo(({ 
   msg, 
@@ -175,6 +223,11 @@ const MessageCard = React.memo(({
           <div className="text-sm break-words">
             <FormatMessageContent content={msg.content} />
           </div>
+          
+          {/* Reasoning display for agent messages with reasoning */}
+          {msg.role === "agent" && msg.reasoning && (
+            <ReasoningDisplay reasoning={msg.reasoning} />
+          )}
           
           {msg.role === "agent" && (
             <div className="flex items-center gap-1.5 mt-2">
@@ -252,6 +305,8 @@ export default function ChatInterface() {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const [isClient, setIsClient] = useState(false)
   const [ratings, setRatings] = useState<{ [id: string]: { rating: number, feedback: string } }>({});
+  const [showSystemPromptModal, setShowSystemPromptModal] = useState(false)
+  const [hasCustomPrompt, setHasCustomPrompt] = useState(false)
 
   // Memoized unique messages to prevent duplicates and improve performance
   const uniqueMessages = useMemo(() => 
@@ -263,6 +318,7 @@ export default function ChatInterface() {
   // Use useEffect to handle client-side only operations
   useEffect(() => {
     setIsClient(true)
+    setHasCustomPrompt(hasCustomSystemPrompt())
     
     // Initialize with welcome message after component mounts on client
     setMessages([
@@ -448,11 +504,27 @@ export default function ChatInterface() {
         
         // Stream is complete, save the message to IndexedDB
         if (accumulatedResponse) {
+          // Extract reasoning if present
+          let content = accumulatedResponse;
+          let reasoning = '';
+          
+          // Check for reasoning in the response
+          if (content.includes('<think>')) {
+            const thinkMatches = content.match(/<think>([\s\S]*?)<\/think>/g);
+            if (thinkMatches) {
+              reasoning = thinkMatches
+                .map(match => match.replace(/<\/?think>/g, ''))
+                .join('\n---\n');
+              content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+            }
+          }
+          
           const finalMessage: Message = {
             role: "agent",
-            content: accumulatedResponse,
+            content: content,
             timestamp: new Date().toLocaleTimeString(),
-            modelId: currentModel
+            modelId: currentModel,
+            ...(reasoning && { reasoning })
           }
           
           // Replace the temporary message with the final one
@@ -470,11 +542,27 @@ export default function ChatInterface() {
       } else {
         // Fallback to non-streaming response
         const data = await response.json()
+        
+        // Extract reasoning if present
+        let content = data.message.content;
+        let reasoning = '';
+        
+        if (content.includes('<think>')) {
+          const thinkMatches = content.match(/<think>([\s\S]*?)<\/think>/g);
+          if (thinkMatches) {
+            reasoning = thinkMatches
+              .map(match => match.replace(/<\/?think>/g, ''))
+              .join('\n---\n');
+            content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+          }
+        }
+        
         const aiMessage: Message = {
           role: "agent",
-          content: data.message.content,
+          content: content,
           timestamp: new Date().toLocaleTimeString(),
-          modelId: currentModel
+          modelId: currentModel,
+          ...(reasoning && { reasoning })
         }
         
         // Replace the placeholder with the complete message
@@ -532,6 +620,13 @@ export default function ChatInterface() {
     // Display a success message when model is changed
     toast.success(`Switched to ${availableModels.find(m => m.id === modelId)?.name || modelId} model`);
   }, [currentModel])
+
+  // Handle system prompt modal save
+  const handleSystemPromptSave = useCallback(() => {
+    setHasCustomPrompt(hasCustomSystemPrompt())
+    setShowSystemPromptModal(false)
+    toast.success('System prompt updated successfully')
+  }, [])
   
   // Function to clear chat history for current model
   const clearChatHistory = useCallback(async () => {
@@ -587,6 +682,31 @@ export default function ChatInterface() {
           <Badge variant="outline" className="px-3 py-1 bg-primary/10 border-primary/20 text-sm font-medium">
             {availableModels.find(m => m.id === currentModel)?.name || currentModel}
           </Badge>
+          
+          {hasCustomPrompt && (
+            <Badge variant="secondary" className="px-3 py-1 bg-green-100 border-green-200 text-green-800 text-sm font-medium">
+              Custom System Prompt
+            </Badge>
+          )}
+          
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSystemPromptModal(true)}
+                  className="flex items-center gap-1 px-3 py-1 h-auto hover:bg-muted rounded-full text-xs text-muted-foreground cursor-pointer"
+                >
+                  <Settings className="h-3 w-3 flex-shrink-0" />
+                  <span>System Prompt</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-sm">
+                <p>Configure custom system prompt to override the default behavior.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           
           <TooltipProvider>
             <Tooltip>
@@ -659,6 +779,13 @@ export default function ChatInterface() {
           Press Enter to send, Shift+Enter for new line
         </div>
       </div>
+      
+      {/* Custom System Prompt Modal */}
+      <CustomSystemPrompt
+        isOpen={showSystemPromptModal}
+        onOpenChange={setShowSystemPromptModal}
+        onSave={handleSystemPromptSave}
+      />
     </div>
   )
 }

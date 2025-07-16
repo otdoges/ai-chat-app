@@ -82,6 +82,14 @@ export const systemPrompts: Record<string, SystemPrompt> = {
 
 // Get system prompt for a model, with fallback to default
 export function getSystemPrompt(modelId: string): string {
+  // Check for custom system prompt in localStorage (client-side only)
+  if (typeof window !== 'undefined') {
+    const customPrompt = localStorage.getItem('custom-system-prompt');
+    if (customPrompt && customPrompt.trim()) {
+      return customPrompt;
+    }
+  }
+  
   return systemPrompts[modelId]?.prompt || 
     "You are a helpful assistant. Provide clear and concise responses.";
 }
@@ -89,4 +97,36 @@ export function getSystemPrompt(modelId: string): string {
 // Get system prompt description for a model, with fallback to default
 export function getSystemPromptDescription(modelId: string): string {
   return systemPrompts[modelId]?.description || "Standard assistant";
+}
+
+// Client-side utility functions for custom system prompts
+export function setCustomSystemPrompt(prompt: string): void {
+  if (typeof window !== 'undefined') {
+    if (prompt.trim()) {
+      localStorage.setItem('custom-system-prompt', prompt);
+    } else {
+      localStorage.removeItem('custom-system-prompt');
+    }
+  }
+}
+
+export function getCustomSystemPrompt(): string | null {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('custom-system-prompt');
+  }
+  return null;
+}
+
+export function clearCustomSystemPrompt(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('custom-system-prompt');
+  }
+}
+
+export function hasCustomSystemPrompt(): boolean {
+  if (typeof window !== 'undefined') {
+    const customPrompt = localStorage.getItem('custom-system-prompt');
+    return customPrompt !== null && customPrompt.trim() !== '';
+  }
+  return false;
 }

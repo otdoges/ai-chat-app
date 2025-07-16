@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@ai-sdk/groq':
+        specifier: ^1.2.9
+        version: 1.2.9(zod@3.25.7)
       '@azure-rest/ai-inference':
         specifier: ^1.0.0-beta.6
         version: 1.0.0-beta.6
@@ -108,7 +111,7 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0(next@15.2.4(@opentelemetry/api@1.9.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)
       ai:
-        specifier: ^4.2.0
+        specifier: ^4.3.16
         version: 4.3.16(react@19.1.0)(zod@3.25.7)
       autoprefixer:
         specifier: ^10.4.20
@@ -209,6 +212,12 @@ importers:
         version: 5.8.3
 
 packages:
+
+  '@ai-sdk/groq@1.2.9':
+    resolution: {integrity: sha512-7MoDaxm8yWtiRbD1LipYZG0kBl+Xe0sv/EeyxnHnGPZappXdlgtdOgTZVjjXkT3nWP30jjZi9A45zoVrBMb3Xg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.0.0
 
   '@ai-sdk/provider-utils@2.2.8':
     resolution: {integrity: sha512-fqhG+4sCVv8x7nFzYnFo19ryhAa3w096Kmc3hWxMQfW/TubPOmt3A6tYZhl4mUfQWWQMsuSkLrtjlWuXBVSGQA==}
@@ -2202,6 +2211,12 @@ packages:
     resolution: {integrity: sha512-YGdT1cVRmKkOg6Sq7vY7IkxdphySKnXhaUmFI4r4FcuFVNgpCb9tZfNwXbT6BPjD5oz0nubFsoo9pIqKrDcCvg==}
 
 snapshots:
+
+  '@ai-sdk/groq@1.2.9(zod@3.25.7)':
+    dependencies:
+      '@ai-sdk/provider': 1.1.3
+      '@ai-sdk/provider-utils': 2.2.8(zod@3.25.7)
+      zod: 3.25.7
 
   '@ai-sdk/provider-utils@2.2.8(zod@3.25.7)':
     dependencies:

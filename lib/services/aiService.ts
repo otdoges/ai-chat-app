@@ -1,5 +1,7 @@
 import ModelClient, { isUnexpected } from "@azure-rest/ai-inference";
 import { AzureKeyCredential } from "@azure/core-auth";
+import { groq } from "@ai-sdk/groq";
+import { generateText, streamText } from "ai";
 import env from "../env";
 import { getSystemPrompt } from "../systemPrompt";
 
@@ -30,38 +32,163 @@ export interface StreamCallbacks {
   onError?: (error: Error) => void;
 }
 
-// Models available from GitHub Marketplace: https://github.com/marketplace/models/
+// Available models from various providers
 export const availableModels = [
-  { id: env.AI_MODELS.OPENAI_GPT_4_1, name: "GPT-4.1" },
-  { id: env.AI_MODELS.OPENAI_O4_MINI, name: "O4 Mini" },
-  { id: env.AI_MODELS.META_LLAMA_4_MAVERICK, name: "Llama 4 Maverick 17B" },
-  { id: env.AI_MODELS.META_LLAMA_3_70B, name: "Llama 3 70B" },
-  { id: env.AI_MODELS.META_LLAMA_3_8B, name: "Llama 3 8B" },
-  { id: env.AI_MODELS.MISTRAL_MIXTRAL, name: "Mixtral 8x7B" },
-  { id: env.AI_MODELS.MISTRAL_SMALL, name: "Mistral Small" },
-  { id: env.AI_MODELS.MISTRAL_MEDIUM, name: "Mistral Medium" },
-  { id: env.AI_MODELS.MISTRAL_LARGE, name: "Mistral Large" },
-  // Gemini models
-  { id: env.AI_MODELS.GEMINI_2_0_FLASH, name: "Gemini 2.0 Flash" },
-  { id: env.AI_MODELS.GEMINI_2_5_FLASH, name: "Gemini 2.5 Flash" },
-  // Grok-3 model
-  { id: env.AI_MODELS.GROK_3, name: "Grok-3", description: "xAI's Grok-3 model via GitHub AI Inference", provider: 'github', model: 'xai/grok-3' },
+  // OpenAI models via GitHub
+  { 
+    id: env.AI_MODELS.OPENAI_GPT_4_1, 
+    name: "GPT-4.1", 
+    provider: 'github', 
+    icon: 'openai.svg',
+    contextWindow: 128000 
+  },
+  { 
+    id: env.AI_MODELS.OPENAI_O4_MINI, 
+    name: "O4 Mini", 
+    provider: 'github', 
+    icon: 'openai.svg',
+    contextWindow: 128000 
+  },
   
-  // Phi-4 Mini model
+  // Meta LLaMA models via GitHub
+  { 
+    id: env.AI_MODELS.META_LLAMA_4_MAVERICK, 
+    name: "Llama 4 Maverick 17B", 
+    provider: 'github', 
+    icon: 'llama.svg',
+    contextWindow: 128000 
+  },
+  { 
+    id: env.AI_MODELS.META_LLAMA_3_70B, 
+    name: "Llama 3 70B", 
+    provider: 'github', 
+    icon: 'llama.svg',
+    contextWindow: 8192 
+  },
+  { 
+    id: env.AI_MODELS.META_LLAMA_3_8B, 
+    name: "Llama 3 8B", 
+    provider: 'github', 
+    icon: 'llama.svg',
+    contextWindow: 8192 
+  },
+  
+  // Groq models
+  {
+    id: 'llama-3.1-8b-instant',
+    name: 'Llama 3.1 8B Instant',
+    provider: 'groq',
+    icon: 'llama.svg',
+    contextWindow: 131072,
+    description: 'Fast Llama model with instant responses'
+  },
+  {
+    id: 'llama-3.3-70b-versatile',
+    name: 'Llama 3.3 70B Versatile',
+    provider: 'groq',
+    icon: 'llama.svg',
+    contextWindow: 131072,
+    description: 'Large, versatile Llama model'
+  },
+  {
+    id: 'gemma2-9b-it',
+    name: 'Gemma2 9B',
+    provider: 'groq',
+    icon: 'gemini.svg',
+    contextWindow: 8192,
+    description: 'Google Gemma2 instruction-tuned model'
+  },
+  {
+    id: 'deepseek-r1-distill-llama-70b',
+    name: 'DeepSeek R1 70B',
+    provider: 'groq',
+    icon: 'deepseek.svg',
+    contextWindow: 131072,
+    description: 'DeepSeek reasoning model with <think> support',
+    reasoning: true
+  },
+  {
+    id: 'mistral-saba-24b',
+    name: 'Mistral Saba 24B',
+    provider: 'groq',
+    icon: 'mistral.svg',
+    contextWindow: 32768,
+    description: 'Mistral AI preview model'
+  },
+  {
+    id: 'qwen/qwen3-32b',
+    name: 'Qwen3 32B',
+    provider: 'groq',
+    icon: 'qwen.svg',
+    contextWindow: 131072,
+    description: 'Alibaba Cloud Qwen3 model'
+  },
+  
+  // Mistral models via GitHub
+  { 
+    id: env.AI_MODELS.MISTRAL_MIXTRAL, 
+    name: "Mixtral 8x7B", 
+    provider: 'github', 
+    icon: 'mistral.svg',
+    contextWindow: 32768 
+  },
+  { 
+    id: env.AI_MODELS.MISTRAL_SMALL, 
+    name: "Mistral Small", 
+    provider: 'github', 
+    icon: 'mistral.svg',
+    contextWindow: 32768 
+  },
+  { 
+    id: env.AI_MODELS.MISTRAL_MEDIUM, 
+    name: "Mistral Medium", 
+    provider: 'github', 
+    icon: 'mistral.svg',
+    contextWindow: 32768 
+  },
+  { 
+    id: env.AI_MODELS.MISTRAL_LARGE, 
+    name: "Mistral Large", 
+    provider: 'github', 
+    icon: 'mistral.svg',
+    contextWindow: 32768 
+  },
+  
+  // Gemini models
+  { 
+    id: env.AI_MODELS.GEMINI_2_0_FLASH, 
+    name: "Gemini 2.0 Flash", 
+    provider: 'gemini', 
+    icon: 'gemini.svg',
+    contextWindow: 1048576 
+  },
+  { 
+    id: env.AI_MODELS.GEMINI_2_5_FLASH, 
+    name: "Gemini 2.5 Flash", 
+    provider: 'gemini', 
+    icon: 'gemini.svg',
+    contextWindow: 1048576 
+  },
+  
+  // xAI Grok model
+  { 
+    id: env.AI_MODELS.GROK_3, 
+    name: "Grok-3", 
+    description: "xAI's Grok-3 model via GitHub AI Inference", 
+    provider: 'github', 
+    icon: 'grok.svg',
+    contextWindow: 131072 
+  },
+  
+  // Microsoft models
   {
     id: 'phi-4-mini',
-    name: 'Phi-4 Mini (GitHub)',
-    description: 'Microsoft Phi-4-mini-reasoning model via GitHub AI Inference',
+    name: 'Phi-4 Mini',
+    description: 'Microsoft Phi-4-mini-reasoning model',
     provider: 'github',
-    model: 'microsoft/Phi-4-mini-reasoning',
-  },
-  // ChatGPT (OpenAI o4-mini) model
-  {
-    id: 'chatgpt-o4-mini',
-    name: 'ChatGPT (OpenAI o4-mini)',
-    description: 'OpenAI o4-mini model via GitHub AI Inference',
-    provider: 'github',
-    model: 'openai/o4-mini',
+    icon: 'microsoft.svg',
+    contextWindow: 128000,
+    reasoning: true
   },
 ];
 
@@ -128,6 +255,9 @@ class AIService {
   }
   
   private preInitializeCommonClients() {
+    // Only pre-initialize if we have a valid token
+    if (!this.token) return;
+    
     // Pre-initialize clients for commonly used models
     const commonModels = [
       env.AI_MODELS.OPENAI_GPT_4_1,
@@ -137,13 +267,24 @@ class AIService {
     
     for (const model of commonModels) {
       if (model !== this.model) { // Skip current model as it's already initialized
-        this.getOrCreateClient(model);
+        try {
+          this.getOrCreateClient(model);
+        } catch (error) {
+          // Silently ignore errors during pre-initialization
+          console.warn(`Failed to pre-initialize client for ${model}:`, error);
+        }
       }
     }
   }
   
   private initClient() {
     if (!this.token) return;
+    
+    // Don't create client for Groq models - they use different SDK
+    const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'gemma2-9b-it', 'deepseek-r1-distill-llama-70b', 'mistral-saba-24b', 'qwen/qwen3-32b'];
+    if (groqModels.includes(this.model)) {
+      return;
+    }
     
     this.client = ModelClient(
       this.endpoint,
@@ -167,6 +308,18 @@ class AIService {
     // Check if we already have a client for this model
     if (this.clientPool.has(modelId)) {
       return this.clientPool.get(modelId)!;
+    }
+    
+    // Don't create client for Groq models - they use different SDK
+    const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'gemma2-9b-it', 'deepseek-r1-distill-llama-70b', 'mistral-saba-24b', 'qwen/qwen3-32b'];
+    if (groqModels.includes(modelId)) {
+      // Return a placeholder client for Groq models
+      return null as any;
+    }
+    
+    // Only create client if we have a valid token
+    if (!this.token) {
+      throw new Error('GitHub token is required for this model');
     }
     
     // Create a new client for this model
@@ -253,16 +406,21 @@ class AIService {
     }
     
     // Initialize client if it doesn't exist yet (server-side)
-    if (!this.client) {
-      this.initClient();
-    }
-    
-    if (!this.client) {
-      throw new Error('Failed to initialize AI client');
+    // Skip for Groq models since they use different SDK
+    const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'gemma2-9b-it', 'deepseek-r1-distill-llama-70b', 'mistral-saba-24b', 'qwen/qwen3-32b'];
+    if (!groqModels.includes(this.model)) {
+      if (!this.client) {
+        this.initClient();
+      }
+      
+      if (!this.client) {
+        throw new Error('Failed to initialize AI client');
+      }
     }
     
     // Get client from pool (either the current one or create a model-specific one)
-    const client = this.clientPool.get(this.model) || this.getOrCreateClient(this.model);
+    // For Groq models, we don't need the Azure client
+    const client = groqModels.includes(this.model) ? null : (this.clientPool.get(this.model) || this.getOrCreateClient(this.model));
 
     // Signal start of streaming if callbacks provided
     if (streamCallbacks?.onStart) {
@@ -342,6 +500,131 @@ class AIService {
         
         return responseText;
       }
+      
+      // Use Groq models
+      const groqModels = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'gemma2-9b-it', 'deepseek-r1-distill-llama-70b', 'mistral-saba-24b', 'qwen/qwen3-32b'];
+      if (groqModels.includes(this.model)) {
+        if (!env.GROQ_API_KEY) {
+          throw new Error('Groq API key is not configured. Please set the GROQ_API_KEY environment variable.');
+        }
+        
+        const systemPrompt = getSystemPrompt(this.model);
+        const formattedMessages = [
+          { role: 'system', content: systemPrompt },
+          ...messages.map(msg => ({
+            role: msg.role === 'agent' ? 'assistant' : msg.role,
+            content: msg.content,
+          })),
+        ];
+        
+        // Check if this is a reasoning model
+        const modelInfo = availableModels.find(m => m.id === this.model);
+        const isReasoningModel = modelInfo?.reasoning || this.model === 'deepseek-r1-distill-llama-70b';
+        
+        if (streamCallbacks && USE_STREAMING) {
+          try {
+            let fullText = '';
+            let reasoning = '';
+            let mainResponse = '';
+            let inThinking = false;
+            
+            const stream = await streamText({
+              model: groq(this.model, {
+                apiKey: env.GROQ_API_KEY,
+                ...(isReasoningModel && { reasoningFormat: 'parsed' })
+              }),
+              messages: formattedMessages,
+              temperature: 0.7,
+              maxTokens: 2000,
+            });
+            
+            for await (const delta of stream.textStream) {
+              fullText += delta;
+              
+              // Handle reasoning extraction for DeepSeek models
+              if (isReasoningModel) {
+                // Check for thinking tags
+                if (delta.includes('<think>')) {
+                  inThinking = true;
+                  const thinkStart = delta.indexOf('<think>');
+                  if (thinkStart >= 0) {
+                    reasoning += delta.substring(thinkStart + 7);
+                  }
+                } else if (delta.includes('</think>')) {
+                  inThinking = false;
+                  const thinkEnd = delta.indexOf('</think>');
+                  if (thinkEnd >= 0) {
+                    reasoning += delta.substring(0, thinkEnd);
+                  }
+                  // Add separator in reasoning
+                  reasoning += '\n---\n';
+                } else if (inThinking) {
+                  reasoning += delta;
+                } else if (!inThinking) {
+                  mainResponse += delta;
+                  streamCallbacks.onToken?.(delta);
+                }
+              } else {
+                streamCallbacks.onToken?.(delta);
+              }
+            }
+            
+            // For reasoning models, store reasoning separately
+            let finalResponse = fullText;
+            if (isReasoningModel && reasoning) {
+              finalResponse = mainResponse || fullText;
+              // Store reasoning for UI display
+              (finalResponse as any).__reasoning = reasoning;
+            }
+            
+            streamCallbacks.onComplete?.(finalResponse);
+            
+            responseCache.set(cacheKey, {
+              response: finalResponse,
+              timestamp: Date.now()
+            });
+            
+            return finalResponse;
+          } catch (error) {
+            if (streamCallbacks.onError) {
+              streamCallbacks.onError(error instanceof Error ? error : new Error(String(error)));
+            }
+            throw error;
+          }
+        } else {
+          // Non-streaming Groq
+          const result = await generateText({
+            model: groq(this.model, {
+              apiKey: env.GROQ_API_KEY,
+              ...(isReasoningModel && { reasoningFormat: 'parsed' })
+            }),
+            messages: formattedMessages,
+            temperature: 0.7,
+            maxTokens: 2000,
+          });
+          
+          let finalResponse = result.text;
+          
+          // Handle reasoning for non-streaming
+          if (isReasoningModel && result.text.includes('<think>')) {
+            const thinkMatch = result.text.match(/<think>([\s\S]*?)<\/think>/g);
+            if (thinkMatch) {
+              const reasoning = thinkMatch.map(match => match.replace(/<\/?think>/g, '')).join('\n---\n');
+              const mainResponse = result.text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+              finalResponse = mainResponse;
+              (finalResponse as any).__reasoning = reasoning;
+            }
+          }
+          
+          responseCache.set(cacheKey, {
+            response: finalResponse,
+            timestamp: Date.now()
+          });
+          
+          return finalResponse;
+        }
+      }
+      
       // Use Phi-4 Mini model
       else if (this.model === 'phi-4-mini') {
         // Create Phi-4 Mini client
