@@ -52,6 +52,8 @@ interface IndexedDBService {
   getAllChats: () => Promise<ChatSession[]>;
   addChat: (session: ChatSession) => Promise<void>;
   deleteChat: (id: string) => Promise<void>;
+  exportChatHistory: () => Promise<string>;
+  importChatHistory: (data: string) => Promise<void>;
 }
 
 class IndexedDBServiceImpl implements IndexedDBService {
@@ -278,6 +280,110 @@ class IndexedDBServiceImpl implements IndexedDBService {
       await db.delete('chats', id);
     } else {
       console.warn('DB is null, cannot delete chat');
+    }
+  }
+
+  async exportChatHistory(): Promise<string> {
+    if (!isBrowser || !this.db) {
+      console.warn('IndexedDB not available, cannot export chat history');
+      return JSON.stringify({ messages: [], chats: [], exportDate: new Date().toISOString() });
+    }
+    
+    try {
+      const db = await this.db;
+      if (!db) {
+        console.warn('DB is null, cannot export chat history');
+        return JSON.stringify({ messages: [], chats: [], exportDate: new Date().toISOString() });
+      }
+      
+      // Get all messages and chats
+      const messages = await db.getAll('messages');
+      const chats = await db.getAll('chats');
+      
+      // Create export data structure
+      const exportData = {
+        messages: messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+        chats: chats.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+        exportDate: new Date().toISOString(),
+        version: '1.0'
+      };
+      
+      return JSON.stringify(exportData, null, 2);
+    } catch (error) {
+      console.error('Error exporting chat history:', error);
+      throw new Error('Failed to export chat history');
+    }
+  }
+
+  async importChatHistory(data: string): Promise<void> {
+    if (!isBrowser || !this.db) {
+      console.warn('IndexedDB not available, cannot import chat history');
+      return;
+    }
+    
+    try {
+      const importData = JSON.parse(data);
+      
+      // Validate import data structure
+      if (!importData || typeof importData !== 'object') {
+        throw new Error('Invalid import data format');
+      }
+      
+      if (!Array.isArray(importData.messages)) {
+        throw new Error('Invalid messages data in import');
+      }
+      
+      const db = await this.db;
+      if (!db) {
+        console.warn('DB is null, cannot import chat history');
+        return;
+      }
+      
+      // Start transaction for atomic operation
+      const tx = db.transaction(['messages', 'chats'], 'readwrite');
+      const messagesStore = tx.objectStore('messages');
+      const chatsStore = tx.objectStore('chats');
+      
+      // Import messages
+      for (const message of importData.messages) {
+        // Validate message structure
+        if (!message.id || !message.role || !message.content || !message.timestamp) {
+          console.warn('Skipping invalid message:', message);
+          continue;
+        }
+        
+        // Generate new ID if message already exists
+        const existingMessage = await messagesStore.get(message.id);
+        if (existingMessage) {
+          message.id = crypto.randomUUID();
+        }
+        
+        await messagesStore.put(message);
+      }
+      
+      // Import chats if they exist
+      if (Array.isArray(importData.chats)) {
+        for (const chat of importData.chats) {
+          if (!chat.id || !chat.title || !chat.createdAt) {
+            console.warn('Skipping invalid chat:', chat);
+            continue;
+          }
+          
+          // Generate new ID if chat already exists
+          const existingChat = await chatsStore.get(chat.id);
+          if (existingChat) {
+            chat.id = crypto.randomUUID();
+          }
+          
+          await chatsStore.put(chat);
+        }
+      }
+      
+      await tx.done;
+      console.log(`Successfully imported ${importData.messages.length} messages and ${importData.chats?.length || 0} chats`);
+    } catch (error) {
+      console.error('Error importing chat history:', error);
+      throw new Error('Failed to import chat history: ' + (error as Error).message);
     }
   }
 }

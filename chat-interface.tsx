@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Copy, Download, ThumbsUp, ThumbsDown, Loader2, Info, Code as CodeIcon, Send, Trash2, MessageSquare, Bot, Github, Brain, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+import { Copy, Download, ThumbsUp, ThumbsDown, Loader2, Info, Code as CodeIcon, Send, Trash2, MessageSquare, Bot, Github, Brain, ChevronDown, ChevronUp, Settings, Upload, FileDown } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -663,6 +663,113 @@ export default function ChatInterface() {
     }
   }, [])
 
+  // Export chat history
+  const exportChatHistory = useCallback(async () => {
+    try {
+      const exportData = await dbService.exportChatHistory();
+      const blob = new Blob([exportData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ai-chat-history-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Chat history exported successfully');
+    } catch (error) {
+      console.error('Error exporting chat history:', error);
+      toast.error('Failed to export chat history');
+    }
+  }, [])
+
+  // Import chat history
+  const importChatHistory = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Reset the input value so the same file can be selected again
+    event.target.value = '';
+
+    // Validate file type
+    if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+      toast.error('Please select a JSON file');
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      toast.error('File size too large. Maximum size is 10MB.');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      
+      // Basic JSON validation
+      let importData;
+      try {
+        importData = JSON.parse(text);
+      } catch (parseError) {
+        toast.error('Invalid JSON file format');
+        return;
+      }
+
+      // Validate required structure
+      if (!importData || typeof importData !== 'object') {
+        toast.error('Invalid file format: Expected object structure');
+        return;
+      }
+
+      if (!Array.isArray(importData.messages)) {
+        toast.error('Invalid file format: Missing or invalid messages array');
+        return;
+      }
+
+      // Validate message structure
+      const invalidMessages = importData.messages.filter((msg: any) => 
+        !msg.role || !msg.content || !msg.timestamp ||
+        (msg.role !== 'user' && msg.role !== 'agent')
+      );
+
+      if (invalidMessages.length > 0) {
+        toast.error(`Found ${invalidMessages.length} invalid message(s) in import file`);
+        return;
+      }
+
+      // Show confirmation dialog for large imports
+      if (importData.messages.length > 100) {
+        const confirmed = confirm(
+          `You are about to import ${importData.messages.length} messages. This will merge with your existing chat history. Continue?`
+        );
+        if (!confirmed) return;
+      }
+
+      await dbService.importChatHistory(text);
+      
+      // Reload messages for current model after import
+      const savedMessages = await dbService.getMessagesByModel(currentModel);
+      const welcomeMessage: Message = {
+        role: "agent",
+        content: `Chat history imported successfully (${importData.messages.length} messages). I am using the ${availableModels.find(m => m.id === currentModel)?.name || currentModel} model. How may I assist you today?`,
+        timestamp: new Date().toLocaleTimeString(),
+        modelId: currentModel
+      };
+      
+      setMessages(savedMessages.length > 0 
+        ? [welcomeMessage, ...savedMessages] 
+        : [welcomeMessage]
+      );
+      
+      toast.success(`Successfully imported ${importData.messages.length} messages`);
+    } catch (error) {
+      console.error('Error importing chat history:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast.error(`Failed to import chat history: ${errorMessage}`);
+    }
+  }, [currentModel])
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800">
       <div className="p-4 border-b bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm shadow-sm">
@@ -723,7 +830,37 @@ export default function ChatInterface() {
           </TooltipProvider>
         </div>
         
-        <div className="mt-3 flex justify-center">
+        <div className="mt-3 flex justify-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={exportChatHistory}
+            className="text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/10 flex items-center gap-1.5 border-blue-200 dark:border-blue-900/30"
+          >
+            <FileDown className="h-3 w-3" />
+            <span>Export</span>
+          </Button>
+          
+          <label className="inline-block">
+            <input
+              type="file"
+              accept=".json"
+              onChange={importChatHistory}
+              className="hidden"
+            />
+            <Button 
+              variant="outline" 
+              size="sm"
+              asChild
+              className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/10 flex items-center gap-1.5 border-green-200 dark:border-green-900/30"
+            >
+              <span>
+                <Upload className="h-3 w-3" />
+                <span>Import</span>
+              </span>
+            </Button>
+          </label>
+          
           <Button 
             variant="outline" 
             size="sm"
