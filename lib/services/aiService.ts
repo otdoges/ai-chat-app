@@ -30,50 +30,68 @@ interface ModelParams {
   presence_penalty?: number;
 }
 
-const GROQ_MODELS = [
-  'llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'gemma2-9b-it',
-  'meta-llama/llama-guard-4-12b', 'deepseek-r1-distill-llama-70b',
-  'deepseek-r1-distill-qwen-32b', 'mistral-saba-24b', 'qwen-qwq-32b',
-  'qwen-2.5-coder-32b', 'qwen-2.5-32b', 'llama-3.3-70b-specdec',
-  'llama-3.2-1b-preview', 'llama-3.2-3b-preview', 'llama-3.2-11b-vision-preview',
-  'llama-3.2-90b-vision-preview', 'moonshotai/kimi-k2-instruct'
+interface ModelConfig {
+  id: string;
+  name: string;
+  provider: 'github' | 'groq' | 'gemini';
+  icon: string;
+  contextWindow: number;
+  description?: string;
+  reasoning?: boolean;
+  vision?: boolean;
+}
+
+const createModel = (config: ModelConfig): ModelConfig => config;
+
+const GITHUB_MODELS: ModelConfig[] = [
+  createModel({ id: env.AI_MODELS.OPENAI_GPT_4_1, name: "GPT-4.1", provider: 'github', icon: 'openai.svg', contextWindow: 128000 }),
+  createModel({ id: env.AI_MODELS.OPENAI_O4_MINI, name: "O4 Mini", provider: 'github', icon: 'openai.svg', contextWindow: 128000 }),
+  createModel({ id: env.AI_MODELS.META_LLAMA_4_MAVERICK, name: "Llama 4 Maverick 17B", provider: 'github', icon: 'llama.svg', contextWindow: 128000 }),
+  createModel({ id: env.AI_MODELS.META_LLAMA_3_70B, name: "Llama 3 70B", provider: 'github', icon: 'llama.svg', contextWindow: 8192 }),
+  createModel({ id: env.AI_MODELS.META_LLAMA_3_8B, name: "Llama 3 8B", provider: 'github', icon: 'llama.svg', contextWindow: 8192 }),
+  createModel({ id: env.AI_MODELS.MISTRAL_MIXTRAL, name: "Mixtral 8x7B", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 }),
+  createModel({ id: env.AI_MODELS.MISTRAL_SMALL, name: "Mistral Small", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 }),
+  createModel({ id: env.AI_MODELS.MISTRAL_MEDIUM, name: "Mistral Medium", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 }),
+  createModel({ id: env.AI_MODELS.MISTRAL_LARGE, name: "Mistral Large", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 }),
+  createModel({ id: env.AI_MODELS.GROK_3, name: "Grok-3", description: "xAI's Grok-3 model via GitHub AI Inference", provider: 'github', icon: 'grok.svg', contextWindow: 131072 }),
+  createModel({ id: 'phi-4-mini', name: 'Phi-4 Mini', description: 'Microsoft Phi-4-mini-reasoning model', provider: 'github', icon: 'microsoft.svg', contextWindow: 128000, reasoning: true }),
 ];
 
-const GEMINI_MODELS = [env.AI_MODELS.GEMINI_2_0_FLASH, env.AI_MODELS.GEMINI_2_5_FLASH];
-
-export const availableModels = [
-  { id: env.AI_MODELS.OPENAI_GPT_4_1, name: "GPT-4.1", provider: 'github', icon: 'openai.svg', contextWindow: 128000 },
-  { id: env.AI_MODELS.OPENAI_O4_MINI, name: "O4 Mini", provider: 'github', icon: 'openai.svg', contextWindow: 128000 },
-  { id: env.AI_MODELS.META_LLAMA_4_MAVERICK, name: "Llama 4 Maverick 17B", provider: 'github', icon: 'llama.svg', contextWindow: 128000 },
-  { id: env.AI_MODELS.META_LLAMA_3_70B, name: "Llama 3 70B", provider: 'github', icon: 'llama.svg', contextWindow: 8192 },
-  { id: env.AI_MODELS.META_LLAMA_3_8B, name: "Llama 3 8B", provider: 'github', icon: 'llama.svg', contextWindow: 8192 },
-  
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Fast Llama model with instant responses' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Large, versatile Llama model' },
-  { id: 'gemma2-9b-it', name: 'Gemma2 9B IT', provider: 'groq', icon: 'gemini.svg', contextWindow: 8192, description: 'Google Gemma2 instruction-tuned model' },
-  { id: 'meta-llama/llama-guard-4-12b', name: 'Llama Guard 4 12B', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Meta Llama Guard safety model' },
-  { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill Llama 70B', provider: 'groq', icon: 'deepseek.svg', contextWindow: 131072, description: 'DeepSeek reasoning model with <think> support', reasoning: true },
-  { id: 'deepseek-r1-distill-qwen-32b', name: 'DeepSeek R1 Distill Qwen 32B', provider: 'groq', icon: 'deepseek.svg', contextWindow: 131072, description: 'DeepSeek reasoning model based on Qwen', reasoning: true },
-  { id: 'mistral-saba-24b', name: 'Mistral Saba 24B', provider: 'groq', icon: 'mistral.svg', contextWindow: 32768, description: 'Mistral AI latest preview model' },
-  { id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', provider: 'groq', icon: 'qwen.svg', contextWindow: 131072, description: 'Alibaba Cloud Qwen reasoning model' },
-  { id: 'qwen-2.5-coder-32b', name: 'Qwen 2.5 Coder 32B', provider: 'groq', icon: 'qwen.svg', contextWindow: 131072, description: 'Specialized coding model by Alibaba Cloud' },
-  { id: 'qwen-2.5-32b', name: 'Qwen 2.5 32B', provider: 'groq', icon: 'qwen.svg', contextWindow: 131072, description: 'Latest Qwen model by Alibaba Cloud' },
-  { id: 'llama-3.3-70b-specdec', name: 'Llama 3.3 70B SpecDec', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Llama 3.3 with speculative decoding' },
-  { id: 'llama-3.2-1b-preview', name: 'Llama 3.2 1B Preview', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Compact Llama 3.2 model preview' },
-  { id: 'llama-3.2-3b-preview', name: 'Llama 3.2 3B Preview', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Small Llama 3.2 model preview' },
-  { id: 'llama-3.2-11b-vision-preview', name: 'Llama 3.2 11B Vision', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Llama 3.2 with vision capabilities', vision: true },
-  { id: 'llama-3.2-90b-vision-preview', name: 'Llama 3.2 90B Vision', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Large Llama 3.2 with vision capabilities', vision: true },
-  { id: 'moonshotai/kimi-k2-instruct', name: 'Moonshot Kimi K2', provider: 'groq', icon: 'openai.svg', contextWindow: 131072, description: 'Moonshot AI Kimi K2 instruction model' },
-  
-  { id: env.AI_MODELS.MISTRAL_MIXTRAL, name: "Mixtral 8x7B", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 },
-  { id: env.AI_MODELS.MISTRAL_SMALL, name: "Mistral Small", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 },
-  { id: env.AI_MODELS.MISTRAL_MEDIUM, name: "Mistral Medium", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 },
-  { id: env.AI_MODELS.MISTRAL_LARGE, name: "Mistral Large", provider: 'github', icon: 'mistral.svg', contextWindow: 32768 },
-  { id: env.AI_MODELS.GEMINI_2_0_FLASH, name: "Gemini 2.0 Flash", provider: 'gemini', icon: 'gemini.svg', contextWindow: 1048576 },
-  { id: env.AI_MODELS.GEMINI_2_5_FLASH, name: "Gemini 2.5 Flash", provider: 'gemini', icon: 'gemini.svg', contextWindow: 1048576 },
-  { id: env.AI_MODELS.GROK_3, name: "Grok-3", description: "xAI's Grok-3 model via GitHub AI Inference", provider: 'github', icon: 'grok.svg', contextWindow: 131072 },
-  { id: 'phi-4-mini', name: 'Phi-4 Mini', description: 'Microsoft Phi-4-mini-reasoning model', provider: 'github', icon: 'microsoft.svg', contextWindow: 128000, reasoning: true },
+const GROQ_MODELS: ModelConfig[] = [
+  createModel({ id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Fast Llama model with instant responses' }),
+  createModel({ id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Large, versatile Llama model' }),
+  createModel({ id: 'gemma2-9b-it', name: 'Gemma2 9B IT', provider: 'groq', icon: 'gemini.svg', contextWindow: 8192, description: 'Google Gemma2 instruction-tuned model' }),
+  createModel({ id: 'meta-llama/llama-guard-4-12b', name: 'Llama Guard 4 12B', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Meta Llama Guard safety model' }),
+  createModel({ id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill Llama 70B', provider: 'groq', icon: 'deepseek.svg', contextWindow: 131072, description: 'DeepSeek reasoning model with <think> support', reasoning: true }),
+  createModel({ id: 'deepseek-r1-distill-qwen-32b', name: 'DeepSeek R1 Distill Qwen 32B', provider: 'groq', icon: 'deepseek.svg', contextWindow: 131072, description: 'DeepSeek reasoning model based on Qwen', reasoning: true }),
+  createModel({ id: 'mistral-saba-24b', name: 'Mistral Saba 24B', provider: 'groq', icon: 'mistral.svg', contextWindow: 32768, description: 'Mistral AI latest preview model' }),
+  createModel({ id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', provider: 'groq', icon: 'qwen.svg', contextWindow: 131072, description: 'Alibaba Cloud Qwen reasoning model' }),
+  createModel({ id: 'qwen-2.5-coder-32b', name: 'Qwen 2.5 Coder 32B', provider: 'groq', icon: 'qwen.svg', contextWindow: 131072, description: 'Specialized coding model by Alibaba Cloud' }),
+  createModel({ id: 'qwen-2.5-32b', name: 'Qwen 2.5 32B', provider: 'groq', icon: 'qwen.svg', contextWindow: 131072, description: 'Latest Qwen model by Alibaba Cloud' }),
+  createModel({ id: 'llama-3.3-70b-specdec', name: 'Llama 3.3 70B SpecDec', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Llama 3.3 with speculative decoding' }),
+  createModel({ id: 'llama-3.2-1b-preview', name: 'Llama 3.2 1B Preview', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Compact Llama 3.2 model preview' }),
+  createModel({ id: 'llama-3.2-3b-preview', name: 'Llama 3.2 3B Preview', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Small Llama 3.2 model preview' }),
+  createModel({ id: 'llama-3.2-11b-vision-preview', name: 'Llama 3.2 11B Vision', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Llama 3.2 with vision capabilities', vision: true }),
+  createModel({ id: 'llama-3.2-90b-vision-preview', name: 'Llama 3.2 90B Vision', provider: 'groq', icon: 'llama.svg', contextWindow: 131072, description: 'Large Llama 3.2 with vision capabilities', vision: true }),
+  createModel({ id: 'moonshotai/kimi-k2-instruct', name: 'Moonshot Kimi K2', provider: 'groq', icon: 'openai.svg', contextWindow: 131072, description: 'Moonshot AI Kimi K2 instruction model' }),
 ];
+
+const GEMINI_MODELS: ModelConfig[] = [
+  createModel({ id: env.AI_MODELS.GEMINI_2_0_FLASH, name: "Gemini 2.0 Flash", provider: 'gemini', icon: 'gemini.svg', contextWindow: 1048576 }),
+  createModel({ id: env.AI_MODELS.GEMINI_2_5_FLASH, name: "Gemini 2.5 Flash", provider: 'gemini', icon: 'gemini.svg', contextWindow: 1048576 }),
+];
+
+export const availableModels: ModelConfig[] = [
+  ...GITHUB_MODELS,
+  ...GROQ_MODELS,
+  ...GEMINI_MODELS,
+];
+
+const GROQ_MODEL_IDS = GROQ_MODELS.map(m => m.id);
+const GEMINI_MODEL_IDS = GEMINI_MODELS.map(m => m.id);
+
+const isGroqModel = (modelId: string): boolean => GROQ_MODEL_IDS.includes(modelId);
+const isGeminiModel = (modelId: string): boolean => GEMINI_MODEL_IDS.includes(modelId);
 
 const defaultModelParams: Record<string, ModelParams> = {
   [env.AI_MODELS.OPENAI_GPT_4_1]: { temperature: 0.7, max_tokens: 1000 },
@@ -107,7 +125,7 @@ class AIService {
   }
 
   private initClient() {
-    if (!this.token || GROQ_MODELS.includes(this.model)) return;
+    if (!this.token || isGroqModel(this.model)) return;
     
     const client = ModelClient(this.endpoint, new AzureKeyCredential(this.token), {
       apiVersion: "2024-12-01-preview",
@@ -118,7 +136,7 @@ class AIService {
   }
 
   private getClient(modelId: string) {
-    if (GROQ_MODELS.includes(modelId)) return null;
+    if (isGroqModel(modelId)) return null;
     if (this.clientPool.has(modelId)) return this.clientPool.get(modelId)!;
     
     if (!this.token) throw new Error('GitHub token is required for this model');
@@ -371,7 +389,7 @@ class AIService {
   }
 
   async generateResponse(messages: ChatMessage[], streamCallbacks?: StreamCallbacks): Promise<string> {
-    if (!this.token && !GROQ_MODELS.includes(this.model)) {
+    if (!this.token && !isGroqModel(this.model)) {
       throw new Error('GitHub token is not configured. Please set the GITHUB_TOKEN environment variable.');
     }
 
@@ -389,9 +407,9 @@ class AIService {
     try {
       let response: string;
 
-      if (GROQ_MODELS.includes(this.model)) {
+      if (isGroqModel(this.model)) {
         response = await this.handleGroqModel(messages, streamCallbacks);
-      } else if (GEMINI_MODELS.includes(this.model)) {
+      } else if (isGeminiModel(this.model)) {
         response = await this.handleGeminiModel(messages, streamCallbacks);
       } else {
         response = await this.handleGitHubModel(messages, streamCallbacks);
@@ -412,7 +430,7 @@ class AIService {
   setModel(modelId: string): void {
     if (modelId) {
       this.model = modelId;
-      if (!GROQ_MODELS.includes(modelId) && !this.clientPool.has(modelId)) {
+      if (!isGroqModel(modelId) && !this.clientPool.has(modelId)) {
         this.initClient();
       }
       this.clearCache(modelId);

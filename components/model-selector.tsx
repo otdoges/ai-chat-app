@@ -126,9 +126,12 @@ export const ModelSelector = React.memo(({ onModelChange, currentModel }: ModelS
         </Button>
       </DialogTrigger>
       
-      <DialogContent className="max-w-4xl max-h-[80vh] p-0">
+      <DialogContent className="max-w-4xl max-h-[80vh] p-0" aria-describedby="model-selector-description">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle className="text-xl font-semibold">Choose a Model</DialogTitle>
+          <div id="model-selector-description" className="sr-only">
+            Select from available AI models including favorites like ultra-fast Groq models and reasoning models, or browse all available models by provider
+          </div>
           <div className="relative mt-4">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
